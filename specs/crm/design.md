@@ -66,3 +66,79 @@ Module CRM bao gồm các bảng chính sau, sử dụng khóa chính dạng UUI
 
 ### 2.3. Solar Logic
 - `POST /api/v1/crm/customers/:id/roi-calculate`: Tính toán lại ROI dựa trên custom_fields mới.
+
+### 2.4. Audit Log & Undo API
+- `GET /api/v1/crm/audit-logs`: Lấy danh sách lịch sử thay đổi dữ liệu (Hỗ trợ phân trang, lọc theo `table_name`, `record_id`, `actor_id`).
+- `POST /api/v1/crm/audit-logs/:id/undo`: Hoàn tác thay đổi dữ liệu về trạng thái trước đó dựa trên ID của log audit.
+
+---
+
+## 3. Kiến Trúc Luồng Hoàn Tác (Undo Sequence Diagram)
+
+Dưới đây là luồng xử lý chi tiết khi người dùng nhấn nút "Undo" để hoàn tác một sự thay đổi trong CRM:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Nhân Viên (Sales/Admin)
+    participant Client as CRM Frontend (React)
+    participant API as CRM API Gateway
+    participant Guard as IAM Auth/RBAC Guard
+    participant Service as CrmUndoService (NestJS)
+    participant DB as PostgreSQL Database
+    participant Loki as Grafana Loki (stdout log)
+
+    User->>Client: Click nút "Undo" trên Activity Log UI
+    Client->>API: POST /api/v1/crm/audit-logs/:id/undo
+    API->>Guard: Kiểm tra quyền hoàn tác (crm:undo)
+    alt Quyền hợp lệ
+        Guard-->>API: Quyền hợp lệ
+        API->>Service: undoChange(logId, actorId)
+        Service->>DB: Query CrmAuditLog theo logId
+        DB-->>Service: Trả về thông tin log (old_values, action, table_name, record_id)
+        
+        Service->>DB: Khởi động Database Transaction
+        alt Trường hợp 1: Action = UPDATE
+            Service->>DB: UPDATE table_name SET columns = old_values WHERE id = record_id
+        else Trường hợp 2: Action = DELETE
+            Service->>DB: INSERT INTO table_name (columns) VALUES (old_values)
+        else Trường hợp 3: Action = INSERT
+            Service->>DB: DELETE FROM table_name WHERE id = record_id
+        end
+
+        alt Thực thi database thành công
+            DB-->>Service: OK
+            Service->>DB: INSERT INTO crm_audit_logs (action = 'UNDO')
+            Service->>DB: Commit Transaction
+            Service->>Loki: Ghi log stdout JSON (Level: INFO, Context: CRM_UNDO)
+            Service-->>API: Hoàn tác thành công (200 OK)
+            API-->>Client: Trả về trạng thái 200 OK
+            Client-->>User: Hiển thị thông báo hoàn tác thành công, reload UI
+        else Vi phạm ràng buộc DB (ví dụ: trùng Unique SĐT)
+            DB-->>Service: Database Error (Unique Constraint)
+            Service->>DB: Rollback Transaction
+            Service->>Loki: Ghi log stdout JSON (Level: ERROR, Message: DB Conflict during Undo)
+            Service-->>API: Ném Custom ConflictException (409)
+            API-->>Client: Trả về lỗi 409 Conflict
+            Client-->>User: Hiển thị cảnh báo: "Dữ liệu bị trùng lặp, không thể hoàn tác"
+        end
+    else Không đủ quyền hạn
+        Guard-->>API: Từ chối (403 Forbidden)
+        API-->>Client: Lỗi 403 Forbidden
+        Client-->>User: Hiển thị "Bạn không có quyền thực hiện thao tác này"
+    end
+```
+
+### 3.1. Thiết kế Bảng `crm_audit_logs` (Lịch Sử Thay Đổi & Hoàn Tác)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh log duy nhất |
+| `table_name` | VARCHAR(100) | NOT NULL | Tên bảng bị thay đổi (ví dụ: `crm_customers`) |
+| `record_id` | UUID | NOT NULL | ID bản ghi bị thay đổi |
+| `action` | VARCHAR(20) | NOT NULL | Hành động: `INSERT`, `UPDATE`, `DELETE`, `UNDO` |
+| `old_values` | JSONB | | Snapshot dữ liệu cũ (chỉ có khi UPDATE hoặc DELETE) |
+| `new_values` | JSONB | | Snapshot dữ liệu mới (chỉ có khi INSERT hoặc UPDATE) |
+| `actor_id` | UUID | | Người thực hiện hành động (Soft link tới IAM) |
+| `trace_id` | UUID | | Trace ID để theo dấu logs Promtail/Loki |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian thực hiện |
+

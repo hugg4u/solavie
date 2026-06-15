@@ -31,3 +31,13 @@ Module CRM (Customer Relationship Management) đóng vai trò là "Hệ thần k
 - Dựa trên diện tích mái, hóa đơn tiền điện và vị trí địa lý, hệ thống phải tự động tính toán được cấu hình hệ thống (kWp) phù hợp.
 - Tính toán sản lượng điện sinh ra, tiền tiết kiệm và số năm hoàn vốn.
 - Lưu kết quả tính toán vào hồ sơ khách hàng.
+
+### 2.6. Audit Logging & Undo (Hoàn tác thay đổi dữ liệu)
+- **Tự động lưu vết (Auto-Audit Logging):** Mọi hành động thêm, sửa, xóa trên các bảng dữ liệu cốt lõi (`crm_leads`, `crm_customers`, `crm_pipelines`) phải được ghi lại tức thời và bất đồng bộ vào nhật ký thay đổi (`crm_audit_logs`).
+- **Lưu trữ Snapshot trạng thái:** Log audit phải chụp lại trạng thái cũ của bản ghi (`old_values`) và trạng thái mới (`new_values`) dưới dạng cấu trúc JSONB.
+- **Hoàn tác (Undo) linh hoạt:** Cho phép Admin hoặc người dùng được phân quyền nhấn nút "Undo" để khôi phục nhanh dữ liệu về trạng thái trước đó.
+- **Xử lý ràng buộc khi Undo:**
+  - Khôi phục chính xác các mối quan hệ (ví dụ: khôi phục lead bị xóa soft delete).
+  - Trả về lỗi rõ ràng nếu vi phạm ràng buộc cơ sở dữ liệu (ví dụ: số điện thoại trùng lặp).
+- **Vết log Undo:** Mọi hành vi Undo phải được ghi nhận là một hành động `UNDO` trong audit log để phục vụ mục đích kiểm toán và truy vết.
+

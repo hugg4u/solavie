@@ -35,3 +35,81 @@ Khi hệ thống bắt được Event `customer.created` hoặc tin nhắn mới
   - `40 - 70`: WARM
   - `> 70`: HOT
 - Nếu trạng thái vừa đổi thành HOT, phát Event `crm.lead.hot` để bắn thông báo.
+
+---
+
+## 5. Nghiệp Vụ Audit Logging & Hoàn Tác (CRM Data Undo)
+
+Để hỗ trợ khả năng khôi phục dữ liệu nghiệp vụ nhanh chóng và chính xác khi nhân viên thao tác sai, hệ thống triển khai cơ chế Audit và Hoàn tác tập trung.
+
+### 5.1. Phạm vi theo dõi Audit
+Chỉ áp dụng ghi nhận nhật ký thay đổi đối với các thực thể cốt lõi mang tính nghiệp vụ trực tiếp để tránh phình to cơ sở dữ liệu:
+*   `crm_customers` (Hồ sơ khách hàng/Lead)
+*   `crm_stages` (Trạng thái Pipeline)
+*   `crm_scoring_rules` (Luật tính điểm)
+
+### 5.2. Nguyên tắc hoạt động của TypeORM Subscriber (Auto Logging)
+Sử dụng TypeORM EventSubscriber để tự động bắt các thay đổi ở tầng ORM mà không cần viết mã thủ công ở từng Service:
+
+```typescript
+import { EventSubscriber, EntitySubscriberInterface, InsertEvent, UpdateEvent, RemoveEvent } from 'typeorm';
+import { CrmCustomer } from './entities/crm-customer.entity';
+import { CrmAuditLog } from './entities/crm-audit-log.entity';
+
+@EventSubscriber()
+export class CrmAuditSubscriber implements EntitySubscriberInterface {
+  listenTo() {
+    return CrmCustomer; // Theo dõi thực thể Customer
+  }
+
+  async afterInsert(event: InsertEvent<any>) {
+    await this.writeLog(event, 'INSERT', null, event.entity);
+  }
+
+  async beforeUpdate(event: UpdateEvent<any>) {
+    // Chụp lại snapshot trước khi update
+    const oldEntity = event.databaseEntity;
+    const newEntity = event.entity;
+    await this.writeLog(event, 'UPDATE', oldEntity, newEntity);
+  }
+
+  async beforeRemove(event: RemoveEvent<any>) {
+    const oldEntity = event.databaseEntity;
+    await this.writeLog(event, 'DELETE', oldEntity, null);
+  }
+
+  private async writeLog(event: any, action: string, oldVal: any, newVal: any) {
+    const traceId = event.queryRunner.data?.traceId || null;
+    const actorId = event.queryRunner.data?.actorId || null;
+
+    const auditRepository = event.manager.getRepository(CrmAuditLog);
+    const log = auditRepository.create({
+      table_name: event.metadata.tableName,
+      record_id: oldVal?.id || newVal?.id,
+      action,
+      old_values: oldVal ? this.sanitizeFields(oldVal) : null,
+      new_values: newVal ? this.sanitizeFields(newVal) : null,
+      actor_id: actorId,
+      trace_id: traceId,
+    });
+    await event.manager.save(log);
+  }
+
+  private sanitizeFields(entity: any): any {
+    // Loại bỏ các trường nhạy cảm hoặc không cần thiết trước khi lưu JSONB (ví dụ password hash)
+    const { password, ...clean } = entity;
+    return clean;
+  }
+}
+```
+
+### 5.3. Quy trình khôi phục và xử lý lỗi trong CrmUndoService
+Khi thực hiện Undo, service sẽ khôi phục dữ liệu cũ dựa trên trường `action` của log:
+1.  **UPDATE:** Thực hiện ghi đè toàn bộ cột của bản ghi hiện tại bằng `old_values`.
+2.  **DELETE:**
+    *   Nếu bảng hỗ trợ *Soft Delete* (có cột `deleted_at`): Đặt lại `deleted_at = NULL`.
+    *   Nếu bảng sử dụng *Hard Delete* (xóa vĩnh viễn): Thực hiện lệnh `INSERT` mới sử dụng toàn bộ cấu trúc dữ liệu trong `old_values`.
+3.  **INSERT:** Thực hiện xóa bản ghi vừa tạo (nếu bản ghi đó đã phát sinh quan hệ ràng buộc ở bảng khác, hệ thống sẽ chặn không cho phép Undo và ném ra exception rõ ràng).
+
+*Nguyên tắc toàn vẹn:* Tất cả các bước trong luồng Undo phải chạy chung một Database Transaction. Nếu một câu lệnh SQL thất bại, toàn bộ quá trình rollback lập tức để tránh tình trạng dữ liệu mồ côi hoặc không nhất quán.
+
