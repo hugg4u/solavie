@@ -3,6 +3,6 @@ import { OutboxService } from './outbox.service';
 
 @Module({
   providers: [OutboxService],
-  exports: [OutboxService]
+  exports: [OutboxService],
 })
-export class OutboxModule { }
+export class OutboxModule {}

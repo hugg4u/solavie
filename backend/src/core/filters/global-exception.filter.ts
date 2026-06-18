@@ -1,4 +1,11 @@
-import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import {
+  ExceptionFilter,
+  Catch,
+  ArgumentsHost,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { TypeORMError } from 'typeorm';
 
@@ -10,14 +17,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<FastifyReply>();
     const request = ctx.getRequest<FastifyRequest>();
-    
+
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: any = 'Internal server error';
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      message = typeof exceptionResponse === 'string' ? exceptionResponse : (exceptionResponse as any).message || exceptionResponse;
+      message =
+        typeof exceptionResponse === 'string'
+          ? exceptionResponse
+          : (exceptionResponse as any).message || exceptionResponse;
     } else if (exception instanceof TypeORMError) {
       status = HttpStatus.UNPROCESSABLE_ENTITY;
       message = exception.message;
@@ -36,9 +46,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     };
 
     if (status >= 500) {
-      this.logger.error(`[${traceId}] ${request.method} ${request.url} - ${message}`, exception instanceof Error ? exception.stack : '');
+      this.logger.error(
+        `[${traceId}] ${request.method} ${request.url} - ${message}`,
+        exception instanceof Error ? exception.stack : '',
+      );
     } else {
-      this.logger.warn(`[${traceId}] ${request.method} ${request.url} - ${JSON.stringify(message)}`);
+      this.logger.warn(
+        `[${traceId}] ${request.method} ${request.url} - ${JSON.stringify(message)}`,
+      );
     }
 
     response.status(status).send(errorResponse);

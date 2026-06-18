@@ -14,7 +14,9 @@ export const REDIS_QUEUE_CLIENT = 'REDIS_QUEUE_CLIENT';
       useFactory: (configService: ConfigService) => {
         const logger = new Logger('RedisCacheClient');
         const client = new Redis(configService.get<string>('REDIS_CACHE_URL')!);
-        client.on('error', (err) => logger.error('Redis Cache Connection Error', err));
+        client.on('error', (err) =>
+          logger.error('Redis Cache Connection Error', err),
+        );
         client.on('connect', () => logger.log('Connected to Redis Cache'));
         return client;
       },
@@ -25,7 +27,9 @@ export const REDIS_QUEUE_CLIENT = 'REDIS_QUEUE_CLIENT';
       useFactory: (configService: ConfigService) => {
         const logger = new Logger('RedisQueueClient');
         const client = new Redis(configService.get<string>('REDIS_QUEUE_URL')!);
-        client.on('error', (err) => logger.error('Redis Queue Connection Error', err));
+        client.on('error', (err) =>
+          logger.error('Redis Queue Connection Error', err),
+        );
         client.on('connect', () => logger.log('Connected to Redis Queue'));
         return client;
       },

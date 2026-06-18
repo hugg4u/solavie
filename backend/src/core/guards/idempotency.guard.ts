@@ -1,4 +1,11 @@
-import { Injectable, CanActivate, ExecutionContext, HttpException, HttpStatus, Inject } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  HttpException,
+  HttpStatus,
+  Inject,
+} from '@nestjs/common';
 import { REDIS_CACHE_CLIENT } from '../redis/redis.module';
 import Redis from 'ioredis';
 
@@ -12,7 +19,7 @@ export class IdempotencyGuard implements CanActivate {
 
     // Nếu API cấu hình bắt buộc mà không có, ta ném lỗi. Ở mức global, nếu ko có thì bỏ qua.
     if (!idempotencyKey) {
-      return true; 
+      return true;
     }
 
     // Chỉ áp dụng cho các hàm làm thay đổi dữ liệu

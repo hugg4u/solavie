@@ -1,5 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-floating-promises */
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from '@fastify/helmet';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -17,6 +21,12 @@ async function bootstrap() {
 
   // Security headers
   await app.register(helmet);
+
+  // Cookie parser
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  await app.register(require('@fastify/cookie'), {
+    secret: process.env.COOKIE_SECRET || 'my-secret', // should be from config
+  });
 
   // CORS
   app.enableCors({

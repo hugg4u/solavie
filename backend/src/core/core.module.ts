@@ -35,7 +35,9 @@ import { IdempotencyGuard } from './guards/idempotency.guard';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         throttlers: [{ ttl: 60, limit: 100 }], // Mặc định 100 requests per 60s
-        storage: new ThrottlerStorageRedisService(new Redis(config.get<string>('REDIS_CACHE_URL')!)),
+        storage: new ThrottlerStorageRedisService(
+          new Redis(config.get<string>('REDIS_CACHE_URL')!),
+        ),
       }),
     }),
   ],

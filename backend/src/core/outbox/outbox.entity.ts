@@ -1,4 +1,9 @@
-import { PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 
 export abstract class BaseOutboxEntity {
   @PrimaryGeneratedColumn('uuid')
@@ -11,7 +16,10 @@ export abstract class BaseOutboxEntity {
   payload: Record<string, any>;
 
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
-  status: 'PENDING' | 'PROCESSED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED';
+
+  @Column({ type: 'text', nullable: true })
+  errorReason?: string;
 
   @CreateDateColumn()
   createdAt: Date;
