@@ -41,3 +41,22 @@ Module CRM (Customer Relationship Management) đóng vai trò là "Hệ thần k
   - Trả về lỗi rõ ràng nếu vi phạm ràng buộc cơ sở dữ liệu (ví dụ: số điện thoại trùng lặp).
 - **Vết log Undo:** Mọi hành vi Undo phải được ghi nhận là một hành động `UNDO` trong audit log để phục vụ mục đích kiểm toán và truy vết.
 
+### 2.7. Kiểm soát Tranh chấp Dữ liệu bằng Khóa Phân Tán (Distributed Redis Lock)
+- **Chống Race Condition khi Gộp Hồ Sơ:** Khi có nhiều luồng hoặc tiến trình (ví dụ: các webhook nhận tin nhắn đồng thời từ Facebook và Zalo của cùng một khách hàng có số điện thoại giống nhau) cố gắng cập nhật hoặc gộp hồ sơ (Merge Profile) cùng lúc, hệ thống phải thực hiện khóa phân tán (Distributed Lock) dựa trên số điện thoại để ngăn chặn tình trạng ghi đè hoặc tạo các bản ghi rác bị trùng lặp.
+- **Tính Bền Vững của Lock:** Khóa phải được lưu trữ trên instance Redis có chính sách bộ nhớ `noeviction` để đảm bảo cờ khóa không bao giờ bị giải phóng nhầm khi RAM đầy.
+- **Xử lý Timeout và Chờ Lock (Backoff):** Tiến trình gộp hồ sơ nếu gặp trạng thái khóa đang bị chiếm dụng phải tự động chờ (Retry/Backoff) hoặc bỏ qua nếu là tin nhắn trùng lặp để giảm tải cho hệ thống DB.
+
+### 2.8. Ghi chú Khách hàng (Customer Take-Note)
+- **Quản lý ghi chú cá nhân:** Nhân viên Sales được phân vai phụ trách (`assignee_id`) hoặc có quyền `crm:notes:write` có thể tạo ghi chú viết tay cho khách hàng.
+- **Tính năng Ghim (Pin Note):** Cho phép ghim các ghi chú quan trọng lên đầu danh sách để đập vào mắt Sales Rep khi truy cập hồ sơ khách hàng hoặc mở khung chat liên quan.
+- **Tính chỉnh sửa/xóa linh hoạt:** Khác với nhật ký hoạt động bất biến, Sales Rep có thể tự chỉnh sửa hoặc xóa ghi chú của chính mình. Admin có quyền chỉnh sửa/xóa tất cả các ghi chú.
+- **Tích hợp Audit Log:** Mọi hành động thêm, sửa, xóa ghi chú khách hàng phải được lưu vết trong `crm_audit_logs` để phục vụ mục đích kiểm toán và hỗ trợ khả năng hoàn tác (`undo`).
+
+### 2.9. Phát Sự Kiện Thông Báo Nội Bộ (Event-Driven Notification)
+
+> **Nguyên tắc kiến trúc:** CRM Module không tự gửi thông báo trực tiếp. Mọi hành động nghiệp vụ quan trọng phải phát sự kiện qua Event Bus nội bộ và Module Notification đảm nhận việc phân phối đến đúng người nhận qua đúng kênh.
+
+- **`lead.assigned`**: Phát khi Admin/Manager gán hoặc chuyển giao Lead cho một Sales Rep mới. Payload bao gồm: `leadId`, `leadName`, `leadPhone`, `assigneeId`, `assigneeEmail`.
+- **`lead.score_hot`**: Phát khi AI Scoring Engine tính toán và Lead đạt ngưỡng nhiệt độ HOT. Payload bao gồm: `leadId`, `leadName`, `leadScore`, `assigneeId`, và `managerId` (nếu có).
+- **`lead.status_changed`**: Phát khi Sales kéo thẻ Lead sang một stage mới trên Kanban Board. Payload bao gồm: `leadId`, `leadName`, `assigneeId`, `oldStageName`, `newStageName`.
+- **`customer.note_mentioned`**: Phát khi một nhân viên gõ `@username` trong ghi chú khách hàng. Payload bao gồm: `customerId`, `mentionedUserId`, `mentionerName`, `noteSnippet`.

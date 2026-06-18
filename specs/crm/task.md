@@ -3,7 +3,8 @@
 - `[ ]` **Setup Entity & Migration:** Khởi tạo các TypeORM Entities cho `crm_customers`, `crm_stages`, `crm_field_definitions`, `crm_scoring_rules`, `crm_activities`.
 - `[ ]` **CRUD Configuration:** Viết các APIs cho Admin cấu hình Fields, Stages, Rules.
 - `[ ]` **Dynamic Pipeline Logic:** Implement Service Layer kiểm tra Entrance Criteria khi đổi Stage.
-- `[ ]` **Merge Logic:** Implement Service gom nhóm hồ sơ trùng số điện thoại.
+- [ ] **Merge Logic:** Implement Service gom nhóm hồ sơ trùng số điện thoại và cập nhật trỏ lại `customer_id` cho các cuộc hội thoại liên quan.
+- `[ ]` **Merge Lead Distributed Lock:** Tích hợp khóa phân tán Redis Lock (ioredis, sử dụng Redis client namespace `cache`) vào luồng Merge Logic để triệt tiêu race condition khi gộp trùng.
 - `[ ]` **ROI Calculator Service:** Cài đặt công thức tính toán Solar dựa trên cấu hình Vùng miền.
 - `[ ]` **Scoring Engine:** Viết logic eval (đánh giá) điểm dựa trên `crm_scoring_rules`.
 - `[ ]` **Activity Observer:** Viết Subscribers lắng nghe Event để tự động ghi log vào `crm_activities`.
@@ -11,3 +12,16 @@
 - `[ ]` **TypeORM Audit Subscriber:** Viết `CrmAuditSubscriber` để tự động bắt các sự kiện ghi dữ liệu của các bảng được cấu hình và lưu snapshot.
 - `[ ]` **CRM Audit & Undo API:** Xây dựng các API `GET /api/v1/crm/audit-logs` và `POST /api/v1/crm/audit-logs/:id/undo` kèm phân quyền check quyền `crm:undo`.
 - `[ ]` **Undo Transaction Service:** Viết `CrmUndoService` xử lý khôi phục dữ liệu an toàn dựa trên snapshot, đảm bảo chạy trong database transaction và bắt lỗi ràng buộc cơ sở dữ liệu.
+- `[ ]` **Take-Note Entity & Migration:** Tạo TypeORM Entity và file migration cho bảng `crm_customer_notes` (thiết lập soft link tới khách hàng và nhân viên).
+- `[ ]` **Customer Notes APIs:** Xây dựng các REST APIs `GET /api/v1/crm/customers/:id/notes`, `POST`, `PUT`, `DELETE` và `PATCH /notes/:noteId/pin` kèm theo các validation DTOs.
+- `[ ]` **Notes Guard & Auth Logic:** Triển khai cơ chế kiểm tra quyền truy cập: chỉ người tạo ghi chú hoặc Admin mới được phép sửa hoặc xóa ghi chú.
+- `[ ]` **Take-Note Audit Registration:** Cấu hình để `CrmAuditSubscriber` tự động lưu vết audit log khi có thao tác INSERT, UPDATE, DELETE trên bảng `crm_customer_notes`.
+
+## Phase 3: Event-Driven Notification Integration
+- `[ ]` **CrmEventPayload DTOs:** Tạo các class Payload cho từng loại sự kiện CRM (`LeadAssignedEvent`, `LeadScoreHotEvent`, `LeadStatusChangedEvent`, `CustomerNoteMentionedEvent`) trong `crm/events/`, yêu cầu bắt buộc có thuộc tính `eventId: string`.
+- `[ ]` **Ghi outbox lead.assigned:** Trong `LeadService.assignLead()`, cùng một DB transaction, ghi vào bảng `crm_outbox_events` loại sự kiện `lead.assigned` bao gồm `eventId`, `leadId`, `leadName`, `leadPhone`, `assigneeId`, `assigneeEmail`.
+- `[ ]` **Ghi outbox lead.score_hot:** Trong `ScoringEngineService`, khi tính toán xét Lead đạt ngưỡng `score >= HOT_THRESHOLD`, ghi sự kiện `lead.score_hot` vào `crm_outbox_events`.
+- `[ ]` **Ghi outbox lead.status_changed:** Trong `PipelineService.moveLeadToStage()`, ghi sự kiện `lead.status_changed` vào `crm_outbox_events`.
+- `[ ]` **Ghi outbox customer.note_mentioned:** Trong `CustomerNoteService.createNote()`, trích xuất `@username` bằng Regex, tìm `userId` và ghi vào `crm_outbox_events` loại `customer.note_mentioned`.
+- `[ ]` **CRM Outbox Worker:** Dựng Cronjob hoặc BullMQ Worker quét định kỳ bảng `crm_outbox_events` (trạng thái PENDING) để publish vào Event Bus.
+- `[ ]` **Integration Tests:** Viết test kiểm tra tất cả 4 events được ghi đúng vào Outbox thay vì phát thẳng ra ngoài khi business logic tương ứng được gọi.

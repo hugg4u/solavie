@@ -50,6 +50,25 @@ Module CRM bao gồm các bảng chính sau, sử dụng khóa chính dạng UUI
 | `score_weight` | INTEGER | NOT NULL | Số điểm cộng/trừ |
 | `is_active` | BOOLEAN | Default TRUE | Kích hoạt |
 
+### 1.5. Bảng `crm_customer_notes` (Ghi chú khách hàng)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh ghi chú |
+| `customer_id` | UUID | NOT NULL (Soft link `crm_customers.id`) | Liên kết khách hàng |
+| `created_by` | UUID | NOT NULL (Soft link `iam_users.id`) | Người tạo ghi chú |
+| `content` | TEXT | NOT NULL | Nội dung ghi chú (Markdown) |
+| `is_pinned` | BOOLEAN | Default FALSE | Cờ ghim lên đầu |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật |
+
+### 1.6. Bảng đệm sự kiện (Transactional Outbox)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh event |
+| `event_type`| VARCHAR(100) | NOT NULL | VD: `lead.assigned` |
+| `payload` | JSONB | NOT NULL | Chứa `eventId` và data |
+| `status` | VARCHAR(20) | Default 'PENDING' | `PENDING`, `PROCESSED`, `FAILED` |
+
 ## 2. Thiết Kế API Endpoints (RESTful)
 
 ### 2.1. Customer Management
@@ -70,6 +89,13 @@ Module CRM bao gồm các bảng chính sau, sử dụng khóa chính dạng UUI
 ### 2.4. Audit Log & Undo API
 - `GET /api/v1/crm/audit-logs`: Lấy danh sách lịch sử thay đổi dữ liệu (Hỗ trợ phân trang, lọc theo `table_name`, `record_id`, `actor_id`).
 - `POST /api/v1/crm/audit-logs/:id/undo`: Hoàn tác thay đổi dữ liệu về trạng thái trước đó dựa trên ID của log audit.
+
+### 2.5. Customer Notes API
+- `GET /api/v1/crm/customers/:id/notes`: Lấy danh sách ghi chú của khách hàng (Hỗ trợ phân trang, sắp xếp ghim `is_pinned DESC, created_at DESC`).
+- `POST /api/v1/crm/customers/:id/notes`: Tạo ghi chú mới.
+- `PUT /api/v1/crm/notes/:noteId`: Sửa nội dung ghi chú (Chỉ người tạo hoặc Admin).
+- `DELETE /api/v1/crm/notes/:noteId`: Xóa ghi chú (Chỉ người tạo hoặc Admin).
+- `PATCH /api/v1/crm/notes/:noteId/pin`: Ghim hoặc bỏ ghim ghi chú.
 
 ---
 
@@ -141,4 +167,40 @@ sequenceDiagram
 | `actor_id` | UUID | | Người thực hiện hành động (Soft link tới IAM) |
 | `trace_id` | UUID | | Trace ID để theo dấu logs Promtail/Loki |
 | `created_at` | TIMESTAMP | Default NOW() | Thời gian thực hiện |
+
+---
+
+## 4. Thiết Kế Khóa Phân Tán (Distributed Redis Lock)
+
+Để giải quyết bài toán xung đột dữ liệu khi gộp trùng hồ sơ (Merge Profile) chạy song song, hệ thống áp dụng cơ chế khóa phân tán dựa trên hạ tầng Redis.
+
+### 4.1. Thiết kế Cấu trúc Key Lock
+- **Tên Key (Redis Key):** `lock:merge:${phone_number}`
+- **Giá trị Key:** Một chuỗi UUID ngẫu nhiên sinh ra cho mỗi request (`request_uuid`), dùng để đảm bảo giải phóng khóa an toàn (chỉ client sở hữu khóa mới được xóa khóa).
+- **Thời gian hết hạn (TTL):** Thiết lập mặc định **10,000 ms (10 giây)** để tránh tình trạng deadlock nếu tiến trình bị sập giữa chừng.
+
+### 4.2. Cơ chế Acquiring & Releasing Lock
+Hệ thống sử dụng lệnh Redis nguyên tử (Atomic Commands) thông qua thư viện `ioredis`:
+
+1.  **Chiếm khóa (Acquire Lock):**
+    ```
+    SET lock:merge:${phone_number} ${request_uuid} NX PX 10000
+    ```
+    - `NX`: Chỉ thiết lập key nếu chưa tồn tại.
+    - `PX 10000`: Thiết lập TTL là 10,000 mili-giây.
+
+2.  **Giải phóng khóa (Release Lock) bằng Script Lua:**
+    Đảm bảo tính nguyên tử và chỉ xóa khóa nếu giá trị khớp với UUID của request ban đầu.
+    ```lua
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+        return redis.call("del", KEYS[1])
+    else
+        return 0
+    end
+    ```
+
+3.  **Cơ chế Chờ khóa (Retry/Backoff):**
+    - Nếu không chiếm được khóa ngay lập tức: Chờ **1,000 ms** (1 giây) rồi thực hiện thử lại (Retry) tối đa 3 lần.
+    - Nếu sau 3 lần vẫn thất bại: Hủy bỏ tiến trình gộp, ghi log cảnh báo và trả về HTTP 409 Conflict hoặc bỏ qua (đối với webhook trùng lặp).
+
 
