@@ -7,3 +7,16 @@
 - `[ ]` **Parser & Mapper:** Viết logic transform các format JSON dị biệt của FB/Zalo về chuẩn `UnifiedMessage` interface.
 - `[ ]` **Redis BullMQ Integration:** Setup cấu hình kết nối Redis.
 - `[ ]` **Producer implementation:** Đẩy `UnifiedMessage` vào Queue và test độ trễ phản hồi HTTP 200.
+- `[ ]` **Outbox Migration & Entity:** Tạo migration và Entity cho bảng `gw_incoming_events` làm Durability Store.
+- `[ ]` **Outbox Transaction Logic:** Viết logic NestJS bọc luồng webhook nhận tin nhắn trong DB Transaction, ghi event và push queue an toàn.
+- `[ ]` **Crypto Service (AES-256-GCM):** Xây dựng `GatewayCryptoService` mã hóa/giải mã API Keys và Page Access Tokens.
+- `[ ]` **Background Recovery Worker:** Triển khai background worker `@Interval` tự động quét các tin nhắn `PENDING` bị kẹt để gửi lại.
+- `[x]` **Redis Isolation Config:** Cấu hình 2 biến môi trường `REDIS_CACHE_URL` và `REDIS_QUEUE_URL` tách biệt, thiết lập Docker-compose (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
+- `[ ]` **BullMQ Connection sharing & cleanup config:** Triển khai cấu hình shared `ioredis` client và default job options (attempts, backoff, removeOnComplete) khi import BullModule.
+- `[ ]` **Supported Providers Endpoint:** Thiết lập enum/readonly constant các hãng LLM và route `GET /api/v1/gateway/providers/supported` trả về danh sách tĩnh kèm caching group.
+- `[ ]` **Configured Providers Endpoint:** Thiết lập route `GET /api/v1/gateway/providers/configured` truy vấn DB, thực hiện masking API keys nhạy cảm (không hiển thị key thô).
+- `[ ]` **Providers Redis Caching & Invalidation:** Tích hợp cache Redis (TTL 300s) cho API configured, triển khai logic clear cache khi Admin ghi dữ liệu hoặc khi sập ví/cooldown.
+- `[ ]` **Migration for Prompt Variables:** Tạo migration và Entity cho bảng `gw_prompt_variables` lưu trữ các biến động của Admin.
+- `[ ]` **Prompt Variables CRUD Endpoint:** Triển khai API `POST /api/v1/gateway/prompts/variables` và `GET /api/v1/gateway/prompts/variables`, bọc bởi Guard phân quyền `prompt:write` và `prompt:read`.
+- `[ ]` **Prompt Injection Filter:** Tích hợp regex pattern blacklist để kiểm duyệt và chặn đứng các chuỗi tấn công Prompt Injection ở đầu vào API.
+- `[ ]` **Prompt Variables Caching & Invalidation:** Cấu hình cache Redis (TTL 300s) trên `REDIS_CACHE_URL` cho biến prompt và trigger xóa cache khi Admin thay đổi giá trị.
