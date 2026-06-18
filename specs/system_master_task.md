@@ -112,25 +112,25 @@
 
 ### Phase 1: Core Auth & Permission Engine
 
-- [ ] **IAM-01:** `AuthService` — login, Bcrypt verify, JWT access token (15m), Refresh Token (32 bytes random, Redis `iam:refresh_token:${token}`, TTL 7d)
-- [ ] **IAM-02:** HttpOnly Cookie config cho `/login` và `/refresh` (Secure, SameSite=Strict)
-- [ ] **IAM-03:** Refresh Token Rotation — thu hồi cũ, phát mới, Breach Detection (replay attack → revoke all sessions)
-- [ ] **IAM-04:** `POST /api/v1/iam/auth/logout` — xóa Redis key, clear cookie, xóa permission cache
-- [ ] **IAM-05:** JWT Strategy (Passport) — validate `Authorization: Bearer <token>`
-- [ ] **IAM-06:** `@RequirePermissions()` decorator + `PermissionsGuard`
-- [ ] **IAM-07:** Dynamic Policy Engine (ABAC) — eval biểu thức từ `iam_policies` (VD: `user.id == resource.assignee_id`)
-- [ ] **IAM-08:** Audit Interceptor — tự động ghi `iam_role_audit_logs` khi có thay đổi ghi/sửa
-- [ ] **IAM-09:** Permission Cache — `user:permissions:${userId}` (Redis `cache`, TTL 1h) + invalidation khi thay đổi quyền
-- [ ] **IAM-10:** Brute-force protection — đếm sai/IP (`iam:brute_force:${ip}`), khóa 15p sau 10 lần sai
+- `[x]` **IAM-01:** `AuthService` — login, Bcrypt verify, JWT access token (15m), Refresh Token (32 bytes random, Redis `iam:refresh_token:${token}`, TTL 7d)
+- `[x]` **IAM-02:** HttpOnly Cookie config cho `/login` và `/refresh` (Secure, SameSite=Strict)
+- `[/]` **IAM-03:** Refresh Token Rotation — thu hồi cũ, phát mới, Breach Detection (replay attack → revoke all sessions)
+- `[/]` **IAM-04:** `POST /api/v1/iam/auth/logout` — xóa Redis key, clear cookie, xóa permission cache
+- `[x]` **IAM-05:** JWT Strategy (Passport) — validate `Authorization: Bearer <token>`
+- `[x]` **IAM-06:** `@RequirePermissions()` decorator + `PermissionsGuard`
+- `[ ]` **IAM-07:** Dynamic Policy Engine (ABAC) — eval biểu thức từ `iam_policies` (VD: `user.id == resource.assignee_id`)
+- `[x]` **IAM-08:** Audit Interceptor — tự động ghi `iam_role_audit_logs` khi có thay đổi ghi/sửa
+- `[ ]` **IAM-09:** Permission Cache — `user:permissions:${userId}` (Redis `cache`, TTL 1h) + invalidation khi thay đổi quyền
+- `[x]` **IAM-10:** Brute-force protection — đếm sai/IP (`iam:brute_force:${ip}`), khóa 15p sau 10 lần sai
 
 ### Phase 2: Security Event Notification Integration
 
-- [ ] **IAM-11:** Event DTOs: `LoginNewDeviceEvent`, `PermissionChangedEvent`, `UserCreatedEvent`, `PasswordChangedEvent`
-- [ ] **IAM-12:** Device Fingerprint Detection — so sánh `(ip, user-agent)` → emit `auth.login_new_device`
-- [ ] **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()`
-- [ ] **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update
-- [ ] **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ.
-- [ ] **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
+- `[ ]` **IAM-11:** Event DTOs: `LoginNewDeviceEvent`, `PermissionChangedEvent`, `UserCreatedEvent`, `PasswordChangedEvent`
+- `[x]` **IAM-12:** Device Fingerprint Detection — so sánh `(ip, user-agent)` → emit `auth.login_new_device`
+- `[x]` **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()`
+- `[ ]` **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update
+- `[x]` **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ.
+- `[ ]` **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
 
 ### Phase 3: Profile & Password Settings
 
