@@ -44,7 +44,7 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`.
 - [ ] **Handover Message Logic:** Triển khai `ChatbotHandoverService` tự động gửi tin nhắn phản hồi lịch sự ngay lập tức khi chuyển chế độ sang `MANUAL`. (Tin nhắn này gửi ra ngoài cho khách qua Facebook/Zalo API — khác với notification nội bộ cho Sales.)
 - [ ] **Handback API Implementation:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm guard phân quyền `chat:write` và bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate).
-- [ ] **Chatbot Outbox Worker:** Triển khai Cronjob/BullMQ Worker để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus.
+- [ ] **Chatbot Outbox Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus.
 
 ## Phase 5: Centralized Logging, Sync Job & Monitoring
 - [ ] **Structured Logging:** Cấu hình Winston Logger để ghi log dạng JSON ra stdout phục vụ Promtail scrape.

@@ -51,8 +51,11 @@
 - Khi cần dữ liệu từ module khác: gọi qua **Internal Service API** hoặc **Event Bus**
 
 ### 3.3. Event-Driven Architecture (Transactional Outbox Pattern)
-- Mọi tương tác phát sinh sự kiện (Publish Events) **bắt buộc** phải sử dụng **Transactional Outbox Pattern** để chống mất mát dữ liệu (Dual-Write Problem).
-- Khi ghi dữ liệu vào CSDL, module phải ghi sự kiện vào bảng Outbox tương ứng (VD: `crm_outbox_events`, `chat_outbox_events`) trong cùng một DB Transaction. Một Background Worker sẽ định kỳ quét bảng Outbox để push vào Event Bus.
+- Mọi tương tác phát sinh sự kiện (Publish Events) **bắt buộc** phải sử dụng **Hybrid Outbox Pattern** để chống mất mát dữ liệu (Dual-Write Problem).
+- Khi ghi dữ liệu vào CSDL, module phải ghi sự kiện vào bảng Outbox tương ứng (Kế thừa từ `BaseOutboxEntity` ở Core) trong cùng một DB Transaction. 
+- Hệ thống áp dụng 2 luồng: 
+  - **Luồng Real-time:** Đẩy Job vào Queue (BullMQ) ngay sau khi Transaction commit để xử lý ngay lập tức (Status: PROCESSING -> PROCESSED).
+  - **Luồng Sweeper:** Một Sweeper Cronjob định kỳ quét các event bị kẹt (PENDING) bằng Database Row-Level Lock (`SKIP LOCKED`) để đẩy bù vào Queue.
 - Phase 1: **NestJS EventEmitter** (InMemory) cho events nội bộ đồng bộ
 - Phase 1: **Redis Pub/Sub** hoặc **BullMQ** cho events bất đồng bộ cross-module từ Outbox
 - Phase 2 (Microservices): Thay thế bằng **RabbitMQ / Kafka** mà không cần refactor logic

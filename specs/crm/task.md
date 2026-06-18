@@ -23,5 +23,5 @@
 - `[ ]` **Ghi outbox lead.score_hot:** Trong `ScoringEngineService`, khi tính toán xét Lead đạt ngưỡng `score >= HOT_THRESHOLD`, ghi sự kiện `lead.score_hot` vào `crm_outbox_events`.
 - `[ ]` **Ghi outbox lead.status_changed:** Trong `PipelineService.moveLeadToStage()`, ghi sự kiện `lead.status_changed` vào `crm_outbox_events`.
 - `[ ]` **Ghi outbox customer.note_mentioned:** Trong `CustomerNoteService.createNote()`, trích xuất `@username` bằng Regex, tìm `userId` và ghi vào `crm_outbox_events` loại `customer.note_mentioned`.
-- `[ ]` **CRM Outbox Worker:** Dựng Cronjob hoặc BullMQ Worker quét định kỳ bảng `crm_outbox_events` (trạng thái PENDING) để publish vào Event Bus.
+- `[ ]` **CRM Outbox Sweeper:** Dựng Cronjob hoặc BullMQ Sweeper quét định kỳ (dùng SKIP LOCKED) bảng `crm_outbox_events` (trạng thái PENDING) để publish vào Event Bus.
 - `[ ]` **Integration Tests:** Viết test kiểm tra tất cả 4 events được ghi đúng vào Outbox thay vì phát thẳng ra ngoài khi business logic tương ứng được gọi.

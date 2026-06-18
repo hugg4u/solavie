@@ -36,7 +36,7 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
   - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/comments`.
   - Lưu ghi chú vào bảng `inbox_internal_comments`.
   - Trích xuất tags `@username` từ nội dung comment bằng Regex. Tìm `userId` tương ứng và ghi bản ghi `inbox.agent_mentioned` vào bảng `inbox_outbox_events` (có `eventId`) trong cùng DB Transaction. Không bắn WebSocket event trực tiếp từ Inbox Module.
-- [ ] **Inbox Outbox Worker:** Triển khai Cronjob/BullMQ Worker quét định kỳ bảng `inbox_outbox_events` và publish ra Event Bus.
+- [ ] **Inbox Outbox Processor & Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper (dùng `SKIP LOCKED`) quét định kỳ bảng `inbox_outbox_events` và publish ra Event Bus.
 - [ ] **Quick Replies API:** Triển khai endpoint `GET /api/v1/inbox/quick-replies` để lấy các mẫu câu trả lời nhanh đã cấu hình sẵn.
 
 ## Phase 4: Round-Robin Auto-Routing Implementation

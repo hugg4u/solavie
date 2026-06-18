@@ -237,7 +237,7 @@ sequenceDiagram
                 alt Vẫn lỗi sau 2 lần thử lại (Handover Trigger)
                     Consumer->>Customer: Gửi tin nhắn chuyển giao mẫu (Handover Message)
                     Consumer->>DB: Cập nhật state = MANUAL, assignee_id = null và ghi event vào chatbot_outbox_events (Transaction)
-                    Consumer->>EventBroker: Outbox Worker publish sự kiện báo Sales hỗ trợ
+                    Consumer->>EventBroker: Outbox Sweeper publish sự kiện báo Sales hỗ trợ
                 end
             end
         end

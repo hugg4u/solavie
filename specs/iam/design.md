@@ -85,7 +85,7 @@
         3. Sinh chuỗi `rawToken` ngẫu nhiên bảo mật (32 bytes cryptographically secure random).
         4. Tính toán `sha256Token = SHA256(rawToken)`.
         5. Lưu vào Redis `redis-queue` (Port 6380 - noeviction) với key `iam:activation:hash:${sha256Token}` giá trị là JSON `{ email, userId }`, thiết lập **TTL = 86400 giây (24 giờ)**.
-        6. Ghi bản ghi sự kiện `auth.user_created` vào bảng `iam_outbox_events` chung DB Transaction với bước tạo User. Payload phải chứa `eventId` ngẫu nhiên để chống duplicate. Outbox Worker sẽ đọc và phát hành sự kiện này đi.
+        6. Ghi bản ghi sự kiện `auth.user_created` vào bảng `iam_outbox_events` chung DB Transaction với bước tạo User. Payload phải chứa `eventId` ngẫu nhiên để chống duplicate. Outbox Sweeper sẽ đọc và phát hành sự kiện này đi.
 *   **`GET /api/v1/iam/users`** (Xem danh sách nhân viên)
     *   *Quyền yêu cầu:* `user:read` (Role `ADMIN` hoặc `MANAGER`)
     *   *QueryParams:* `page`, `limit`, `search`, `roleId`, `isActive`
@@ -97,7 +97,7 @@
     *   *Logic xử lý:* Cập nhật DB PostgreSQL. Đồng thời thực hiện giải phóng cache phân quyền trên Redis `user:permissions:${id}` nếu có sự thay đổi vai trò hoặc khóa hoạt động tài khoản.
 *   **`POST /api/v1/iam/users/:id/resend-activation`** (Admin yêu cầu gửi lại link kích hoạt/thiết lập mật khẩu)
     *   *Quyền yêu cầu:* `user:update` (Mặc định chỉ gán cho Role `ADMIN`)
-    *   *Logic xử lý:* Tạo activation token mới (xóa token cũ nếu có trong Redis) và ghi bản ghi `auth.user_created` vào `iam_outbox_events` để Outbox Worker gửi lại email kích hoạt cho nhân viên đó.
+    *   *Logic xử lý:* Tạo activation token mới (xóa token cũ nếu có trong Redis) và ghi bản ghi `auth.user_created` vào `iam_outbox_events` để Outbox Sweeper gửi lại email kích hoạt cho nhân viên đó.
 
 ### 4.2. Nhóm API Xác Thực Hệ Thống (Public)
 *   **`POST /api/v1/iam/auth/login`** (Đăng nhập nhân viên)

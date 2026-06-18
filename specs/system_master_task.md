@@ -62,7 +62,7 @@
 - [x] **SYS-BOOT-09:** Cài đặt và cấu hình Helmet, CORS (chỉ allow portal domain)
 - [x] **SYS-BOOT-10:** Cài đặt Rate Limiter global (`@nestjs/throttler` + Redis store)
 - [x] **SYS-BOOT-11:** Cài đặt Global Idempotency Guard/Interceptor (`eventId` checker)
-- [x] **SYS-BOOT-12:** Cài đặt Generic Outbox Polling Worker (nếu gom chung) hoặc base class cho Outbox workers
+- [x] **SYS-BOOT-12:** Thiết lập kiến trúc Core Outbox (BaseOutboxEntity) và cấu hình BullMQ.
 
 ---
 
@@ -129,7 +129,7 @@
 - [ ] **IAM-12:** Device Fingerprint Detection — so sánh `(ip, user-agent)` → emit `auth.login_new_device`
 - [ ] **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()`
 - [ ] **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update
-- [ ] **IAM-15:** IAM Outbox Worker — quét `iam_outbox_events` PENDING và publish vào Event Bus
+- [ ] **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ.
 - [ ] **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
 
 ### Phase 3: Profile & Password Settings
@@ -165,7 +165,7 @@
 - [ ] **GW-06:** BullMQ Integration — setup kết nối `REDIS_QUEUE_URL`
 - [ ] **GW-07:** BullMQ Producer — đẩy `UnifiedMessage` vào queue, HTTP 200 < 200ms
 - [ ] **GW-08:** Migration + Entity `gw_incoming_events` (Outbox pattern)
-- [ ] **GW-09:** Outbox Transaction Logic — DB Transaction bọc nhận webhook + ghi outbox + push queue
+- [ ] **GW-09:** Hybrid Outbox Logic — DB Transaction nhận webhook + save outbox + push queue ngay lập tức.
 - [ ] **GW-10:** `GatewayCryptoService` — AES-256-GCM encrypt/decrypt API keys
 - [x] **GW-11:** Redis Isolation Config — `REDIS_CACHE_URL` + `REDIS_QUEUE_URL` (→ DevOps task DEV-05/06)
 - [ ] **GW-12:** Background Recovery Worker — `@Interval` scan `gw_incoming_events` status `PENDING` → retry
@@ -288,7 +288,7 @@
 - [ ] **CRM-19:** Ghi outbox `lead.score_hot` trong `ScoringEngineService` khi score ≥ HOT_THRESHOLD
 - [ ] **CRM-20:** Ghi outbox `lead.status_changed` trong `PipelineService.moveLeadToStage()`
 - [ ] **CRM-21:** Ghi outbox `customer.note_mentioned` — extract `@username` Regex + find userId
-- [ ] **CRM-22:** CRM Outbox Worker — quét `crm_outbox_events` PENDING và publish vào Event Bus
+- [ ] **CRM-22:** CRM Outbox Sweeper — Cronjob quét `crm_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ.
 - [ ] **CRM-23:** Integration tests: 4 events emit đúng payload qua Outbox
 
 ---
@@ -366,7 +366,7 @@
 - [ ] **BK-12:** Event classes `AppointmentConfirmedEvent`, `AppointmentCancelledEvent` (chứa `eventId`)
 - [ ] **BK-13:** Ghi outbox `appointment.confirmed` sau `commitTransaction()` thành công
 - [ ] **BK-14:** Ghi outbox `appointment.cancelled` khi hủy/dời lịch
-- [ ] **BK-15:** Booking Outbox Worker — quét `booking_outbox_events` PENDING và publish vào Event Bus
+- [ ] **BK-15:** Booking Outbox Sweeper — Cronjob quét `booking_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ.
 - [ ] **BK-16:** Xóa `ReminderScheduler` cũ (nếu có), remove BullMQ dependency khỏi `BookingModule`
 
 ### Phase 5: AI Chatbot Integration
