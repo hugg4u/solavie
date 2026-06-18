@@ -27,7 +27,26 @@ Lưu trữ metadata để hệ thống Solavie biết file đó đang nằm ở 
 
 ## 3. Thiết Kế API Endpoints
 
-- `POST /api/v1/storage/presigned-upload`: Lấy URL upload tạm thời.
-- `POST /api/v1/storage/confirm`: Xác nhận file đã upload xong để cập nhật `is_confirmed = true`.
+- `POST /api/v1/storage/presigned-post`: Yêu cầu Backend cấp policy tải file. Backend trả về URL kèm các `fields` (credentials, constraints) để Client POST trực tiếp lên MinIO.
+- `POST /api/v1/storage/confirm`: Xác nhận file đã upload xong (Di chuyển file ra khỏi thư mục `tmp/` và đánh dấu `is_confirmed = true`).
 - `GET /api/v1/storage/presigned-download/:id`: Lấy URL download (có thời hạn) của một file Private.
 - `DELETE /api/v1/storage/files/:id`: Xóa file khỏi MinIO và Database.
+
+---
+
+## 4. Thiết Kế Tự Động Hóa Hạ Tầng (Infrastructure Automation)
+
+Thay vì xử lý các tác vụ nặng nề trên Application Layer (Node.js/NestJS), hệ thống sử dụng sức mạnh của Hạ tầng.
+
+### 4.1. Dọn Dẹp File Rác Bằng MinIO OLM
+- **Nguyên lý:** Khi sinh Presigned POST, Backend thiết lập đường dẫn tạm thời chứa tiền tố `tmp/` (VD: `customer-media/tmp/2026/06/abc.jpg`).
+- **OLM Rule:** Bucket trên MinIO được cấu hình một policy Object Lifecycle Management tự động xóa mọi Object nằm trong thư mục `tmp/` sau đúng 1 ngày (24 giờ).
+- **Luồng xác nhận (Confirm):** Khi Client gọi hàm Confirm lên Backend, Backend dùng lệnh `CopyObjectCommand` chuyển file từ thư mục `tmp/` sang vị trí chính thức trên MinIO, giúp file thoát khỏi "án tử" của OLM.
+
+### 4.2. Xử Lý Ảnh Bất Đồng Bộ (Async Image Processing)
+- Để đảm bảo ảnh tải lên được tối ưu trước khi lưu trữ lâu dài:
+  1. Client confirm file thành công.
+  2. Storage Service đẩy một job vào Queue (Redis BullMQ) mang tên `image-processing-queue`.
+  3. Worker độc lập (chạy ngầm) bốc job, dùng thư viện `sharp` để nén ảnh (Resize) và đổi đuôi sang `.webp`.
+  4. Worker ghi đè kết quả lên MinIO và xóa file gốc (nếu khác định dạng).
+

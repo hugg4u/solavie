@@ -1,92 +1,61 @@
-# Quy Chuẩn Ghi Log Module Storage
+# Logging & Monitoring — Module Storage
 
-Tất cả các log ghi vết nghiệp vụ lưu trữ và giám sát hạ tầng lưu trữ của Module Storage bắt buộc phải in ra stdout dưới dạng JSON có cấu trúc.
+Tài liệu này đặc tả quy chuẩn Structured Logging cho Module Storage (xử lý File Upload/Download với MinIO) theo chuẩn hệ thống chung sử dụng Grafana Loki.
 
 ---
 
-## 1. Mẫu Log Tải Lên Tập Tin Thành Công (File Uploaded Success)
-Ghi log mức `info` khi một file ảnh hoặc tài liệu được upload lên Cloud Storage (MinIO/S3) và được confirm lưu trữ thành công.
+## 1. Cấu Trúc Log Chuẩn (Structured JSON Logging)
 
+Tuân thủ chuẩn Structured Logging JSON của toàn hệ thống Solavie. Mọi thao tác I/O với hệ thống Storage S3 (MinIO) đều được ghi nhận (Audit Trail).
+
+**Mẫu Payload chuẩn:**
 ```json
 {
-  "timestamp": "2026-06-15T16:50:00.123Z",
+  "timestamp": "2026-06-18T10:15:22.000Z",
   "level": "info",
-  "module": "STORAGE",
-  "context": "STORAGE_SERVICE",
-  "message": "File uploaded and confirmed successfully",
-  "traceId": "t_stor_772102_trace",
+  "service": "storage-module",
+  "traceId": "req-123-abc",
+  "actorId": "user-uuid-456",
+  "action": "FILE_PRESIGNED_URL_GENERATED",
+  "message": "Generated pre-signed URL for file upload",
   "metadata": {
-    "file_id": "file_uuid_55921",
-    "bucket": "solavie-leads-assets",
-    "file_name": "lead_roof_photo.jpg",
-    "file_size_bytes": 2048500,
-    "uploaded_by": "usr_sales_uuid_445"
+    "bucket": "customer-media",
+    "objectKey": "customer-media/2026/06/18/uuid.jpg",
+    "mimeType": "image/jpeg",
+    "expiresInSeconds": 3600
   }
 }
 ```
 
 ---
 
-## 2. Mẫu Log Xóa Tập Tin (File Deleted Security Audit)
-Ghi log cảnh báo mức `warn` khi một file bị xóa vĩnh viễn khỏi bucket để phục vụ rà soát an ninh dữ liệu.
+## 2. Các Action Bắt Buộc Ghi Log (Log Events)
 
-```json
-{
-  "timestamp": "2026-06-15T16:51:05.456Z",
-  "level": "warn",
-  "module": "STORAGE",
-  "context": "STORAGE_SERVICE",
-  "message": "File deleted permanently from storage",
-  "traceId": "t_stor_772103_trace",
-  "metadata": {
-    "file_id": "file_uuid_55921",
-    "bucket": "solavie-leads-assets",
-    "file_name": "lead_roof_photo.jpg",
-    "deleted_by": "usr_admin_uuid_112"
-  }
-}
-```
+### 2.1. File Operations (Bảo mật truy cập)
+| `action` (Chuẩn Hóa) | Mức Độ | Mô Tả Nghiệp Vụ | Dữ Liệu `metadata` Đặc Trưng |
+| --- | --- | --- | --- |
+| `FILE_PRESIGNED_URL_GENERATED` | `info` | Ghi nhận khi có yêu cầu sinh URL upload/download. | `bucket`, `objectKey`, `expiresInSeconds`, `urlType` (upload/download) |
+| `FILE_UPLOAD_CONFIRMED` | `info` | Xác nhận file đã được upload lên MinIO thành công bởi Client. | `bucket`, `objectKey`, `sizeBytes`, `mimeType` |
+| `FILE_DELETED` | `info` | Xóa cứng file khỏi MinIO. | `bucket`, `objectKey` |
+| `FILE_ACCESS_DENIED` | `warn` | User cố gắng truy cập lấy URL của file mà không có quyền (ABAC chặn). | `bucket`, `objectKey`, `requestedBy` |
 
----
+### 2.2. Lỗi Hệ Thống S3 (MinIO Errors)
+| `action` (Chuẩn Hóa) | Mức Độ | Mô Tả Nghiệp Vụ | Dữ Liệu `metadata` Đặc Trưng |
+| --- | --- | --- | --- |
+| `S3_CONNECTION_ERROR` | `error` | Không kết nối được với Server MinIO. | `errorMessage`, `endpoint` |
+| `S3_BUCKET_NOT_FOUND` | `error` | Cố gắng tương tác với một bucket chưa được khởi tạo. | `bucket` |
 
-## 3. Mẫu Log Lỗi Kết Nối MinIO/S3 API (Cloud Storage Connection Error)
-Ghi log lỗi mức `error` khi backend thất bại trong việc thực hiện request gọi tới AWS S3/MinIO API do lỗi mạng hoặc cấu hình.
-
-```json
-{
-  "timestamp": "2026-06-15T16:52:10.789Z",
-  "level": "error",
-  "module": "STORAGE",
-  "context": "MINIO_ADAPTER",
-  "message": "Failed to connect to Cloud Storage API",
-  "traceId": "t_stor_772104_trace",
-  "metadata": {
-    "operation": "PUT_OBJECT",
-    "endpoint": "https://minio.solavie.internal:9000",
-    "error_code": "RequestTimeout",
-    "error_message": "Connection timed out after 5000ms"
-  }
-}
-```
+### 2.3. Garbage Collection (Dọn Dẹp File Rác)
+| `action` (Chuẩn Hóa) | Mức Độ | Mô Tả Nghiệp Vụ | Dữ Liệu `metadata` Đặc Trưng |
+| --- | --- | --- | --- |
+| `GC_JOB_STARTED` | `info` | CronJob BullMQ dọn file rác bắt đầu chạy. | `targetBucket` |
+| `GC_FILE_PURGED` | `info` | Xóa một file rác (đã quá hạn sinh Presigned URL nhưng không được Confirm). | `bucket`, `objectKey`, `createdAt` |
+| `GC_JOB_COMPLETED` | `info` | Job kết thúc. | `totalFilesPurged`, `reclaimedBytes`, `durationMs` |
 
 ---
 
-## 4. Mẫu Log Quá Tải Dung Lượng Lưu Trữ (Disk Quota Exceeded Alert)
-Ghi log cảnh báo khẩn cấp mức `critical` khi tổng dung lượng sử dụng của phân vùng đĩa cứng lưu trữ đạt trên 80% quota quy định.
+## 3. Quy Tắc Bảo Mật Log (Log Masking)
 
-```json
-{
-  "timestamp": "2026-06-15T16:55:00.000Z",
-  "level": "critical",
-  "module": "STORAGE",
-  "context": "DISK_USAGE_MONITOR",
-  "message": "Storage disk usage has exceeded 80% quota threshold",
-  "traceId": "job_disk_check_20260615",
-  "metadata": {
-    "total_size_bytes": 1099511627776,
-    "used_size_bytes": 890581052620,
-    "usage_percentage": 81.0,
-    "action_required": "Please expand storage partition immediately or clean up old assets"
-  }
-}
-```
+Tuyệt đối **KHÔNG** ghi các thông tin sau vào Log JSON ra màn hình `stdout` (để tránh rò rỉ khi lưu trên Loki):
+1. Chuỗi `Presigned URL` đầy đủ (Vì URL này chứa token ký có thể tải/upload file trực tiếp). Chỉ ghi objectKey.
+2. `SecretKey` của MinIO hoặc bất kỳ mật khẩu nào.
