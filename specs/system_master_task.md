@@ -51,18 +51,18 @@
 
 ### 0.2 — NestJS Project Bootstrap
 
-- [ ] **SYS-BOOT-01:** Khởi tạo NestJS project với Fastify adapter (`@nestjs/platform-fastify`)
-- [ ] **SYS-BOOT-02:** Cấu hình `ConfigModule` (global, validation schema với `joi` hoặc `zod`)
-- [ ] **SYS-BOOT-03:** Cấu hình `TypeORM` + PostgreSQL connection (pgvector enabled)
-- [ ] **SYS-BOOT-04:** Cấu hình `RedisModule` multi-client: namespace `cache` (6379) + `queue` (6380)
-- [ ] **SYS-BOOT-05:** Cấu hình `BullModule` global với `REDIS_QUEUE_URL` (noeviction instance)
-- [ ] **SYS-BOOT-06:** Cấu hình `EventEmitter2` module (global, wildcard enabled)
-- [ ] **SYS-BOOT-07:** Cấu hình Winston Logger (JSON stdout format, levels per env)
-- [ ] **SYS-BOOT-08:** Cấu hình Global `ValidationPipe`, `GlobalExceptionFilter`, `TraceIdInterceptor`
-- [ ] **SYS-BOOT-09:** Cài đặt và cấu hình Helmet, CORS (chỉ allow portal domain)
-- [ ] **SYS-BOOT-10:** Cài đặt Rate Limiter global (`@nestjs/throttler` + Redis store)
-- [ ] **SYS-BOOT-11:** Cài đặt Global Idempotency Guard/Interceptor (`eventId` checker)
-- [ ] **SYS-BOOT-12:** Cài đặt Generic Outbox Polling Worker (nếu gom chung) hoặc base class cho Outbox workers
+- [x] **SYS-BOOT-01:** Khởi tạo NestJS project với Fastify adapter (`@nestjs/platform-fastify`)
+- [x] **SYS-BOOT-02:** Cấu hình `ConfigModule` (global, validation schema với `zod`)
+- [x] **SYS-BOOT-03:** Cấu hình `TypeORM` + PostgreSQL connection (pgvector enabled)
+- [x] **SYS-BOOT-04:** Cấu hình `RedisModule` multi-client: namespace `cache` (6379) + `queue` (6380)
+- [x] **SYS-BOOT-05:** Cấu hình `BullModule` global với `REDIS_QUEUE_URL` (noeviction instance)
+- [x] **SYS-BOOT-06:** Cấu hình `EventEmitter2` module (global, wildcard enabled)
+- [x] **SYS-BOOT-07:** Cấu hình Winston Logger (JSON stdout format, levels per env)
+- [x] **SYS-BOOT-08:** Cấu hình Global `ValidationPipe`, `GlobalExceptionFilter`, `TraceIdInterceptor`
+- [x] **SYS-BOOT-09:** Cài đặt và cấu hình Helmet, CORS (chỉ allow portal domain)
+- [x] **SYS-BOOT-10:** Cài đặt Rate Limiter global (`@nestjs/throttler` + Redis store)
+- [x] **SYS-BOOT-11:** Cài đặt Global Idempotency Guard/Interceptor (`eventId` checker)
+- [x] **SYS-BOOT-12:** Cài đặt Generic Outbox Polling Worker (nếu gom chung) hoặc base class cho Outbox workers
 
 ---
 
@@ -72,35 +72,35 @@
 
 ### Phase 1: Dockerfile & Base Setup
 
-- [ ] **DEV-01:** Multi-stage `Dockerfile` (Stage 1: build TS → Stage 2: node-alpine production)
-- [ ] **DEV-02:** Cấu hình `.dockerignore` (loại bỏ `node_modules`, `dist`, logs)
-- [ ] **DEV-03:** Soạn `.env.example` đầy đủ (DB, Redis x2, MinIO, LiteLLM, JWT, AES Key, SMTP, Zalo)
+- [x] **DEV-01:** Multi-stage `Dockerfile` (Stage 1: build TS → Stage 2: node-alpine production)
+- [x] **DEV-02:** Cấu hình `.dockerignore` (loại bỏ `node_modules`, `dist`, logs)
+- [x] **DEV-03:** Soạn `.env.example` đầy đủ (DB, Redis x2, MinIO, LiteLLM, JWT, AES Key, SMTP, Zalo)
 
 ### Phase 2: Docker Compose Orchestration
 
-- [ ] **DEV-04:** Service `postgres` (image `ankane/pgvector:v0.5.1`) + healthcheck `pg_isready`
-- [ ] **DEV-05:** Service `redis-cache` (port 6379, `allkeys-lru`, 512MB) + healthcheck
-- [ ] **DEV-06:** Service `redis-queue` (port 6380, `noeviction`, `appendonly yes`, 1GB) + healthcheck
-- [ ] **DEV-07:** Service `minio` (port 9000 API, 9001 Console) + healthcheck
-- [ ] **DEV-08:** Service `litellm` (AI proxy) + healthcheck
-- [ ] **DEV-09:** Service `mailhog` (development SMTP preview, port 8025 UI)
-- [ ] **DEV-10:** `depends_on` với `service_healthy` cho NestJS backend
+- [x] **DEV-04:** Service `postgres` (image `ankane/pgvector:v0.5.1`) + healthcheck `pg_isready`
+- [x] **DEV-05:** Service `redis-cache` (port 6379, `allkeys-lru`, 512MB) + healthcheck
+- [x] **DEV-06:** Service `redis-queue` (port 6380, `noeviction`, `appendonly yes`, 1GB) + healthcheck
+- [x] **DEV-07:** Service `minio` (port 9000 API, 9001 Console) + healthcheck
+- [x] **DEV-08:** Service `litellm` (AI proxy) + healthcheck
+- [x] **DEV-09:** Service `mailhog` (development SMTP preview, port 8025 UI)
+- [x] **DEV-10:** `depends_on` với `service_healthy` cho NestJS backend
 
 ### Phase 3: Persistence & Init
 
-- [ ] **DEV-11:** Persistent volumes cho `pg_data`, `minio_data`, `redis_cache_data`, `redis_queue_data`
-- [ ] **DEV-12:** MinIO auto-bucket creation script (4 buckets: `rag-documents`, `customer-media`, `user-media`, `system-assets`)
+- [x] **DEV-11:** Persistent volumes cho `pg_data`, `minio_data`, `redis_cache_data`, `redis_queue_data`
+- [x] **DEV-12:** MinIO auto-bucket creation script (4 buckets: `rag-documents`, `customer-media`, `user-media`, `system-assets`)
 
 ### Phase 4: Notification Env Setup
 
-- [ ] **DEV-13:** Thêm Email env vars vào `.env.example`: `SMTP_*`, `AWS_SES_*`, `NOTIFICATION_FROM_*`
-- [ ] **DEV-14:** Thêm Zalo env vars: `ZALO_OA_ID`, `ZALO_OA_ACCESS_TOKEN`, `ZALO_ZNS_SECRET_KEY`
-- [ ] **DEV-15:** `ConfigModule` validation throw error nếu thiếu biến bắt buộc
+- [x] **DEV-13:** Thêm Email env vars vào `.env.example`: `SMTP_*`, `AWS_SES_*`, `NOTIFICATION_FROM_*`
+- [x] **DEV-14:** Thêm Zalo env vars: `ZALO_OA_ID`, `ZALO_OA_ACCESS_TOKEN`, `ZALO_ZNS_SECRET_KEY`
+- [x] **DEV-15:** `ConfigModule` validation throw error nếu thiếu biến bắt buộc
 
 ### Phase 5: Security & Hardening
 
-- [ ] **DEV-16:** Dockerfile Stage 2 sử dụng `USER node` (non-root)
-- [ ] **DEV-17:** Kiểm tra production image size < 150MB
+- [x] **DEV-16:** Dockerfile Stage 2 sử dụng `USER node` (non-root)
+- [x] **DEV-17:** Kiểm tra production image size < 150MB
 
 ---
 

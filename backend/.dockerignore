@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules/
+dist/
+logs/
+.env
+Dockerfile
+docker-compose.yml
+test/
+src/**/*.spec.ts
+README.md
+npm-debug.log
+yarn-error.log
