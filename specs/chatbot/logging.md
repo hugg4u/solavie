@@ -174,4 +174,123 @@ Ghi log thống kê số lượng model đã được đồng bộ từ LiteLLM 
 }
 ```
 
+---
+
+## 8. Mẫu Log Quản Lý Hàng Đợi Chatbot (Chatbot Queue Management Logs)
+
+### 8.1. Log Nhận Tin Nhắn Đưa Vào Debounce (Debounce Job Created)
+Ghi log khi tin nhắn của khách hàng được đẩy vào hàng đợi debounce.
+```json
+{
+  "timestamp": "2026-06-15T16:15:00.010Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "DEBOUNCE_QUEUE",
+  "message": "Debounce job created and delayed",
+  "traceId": "t_react_982137_trace",
+  "metadata": {
+    "job_id": "debounce:conv_uuid_9921",
+    "conversation_id": "conv_uuid_9921",
+    "delay_ms": 10000
+  }
+}
+```
+
+### 8.2. Log Gộp Tin Nhắn Đang Chờ Debounce (Debounce Job Updated)
+Ghi log khi khách hàng tiếp tục nhắn tin trong khoảng thời gian debounce (10 giây) và tin nhắn được gộp.
+```json
+{
+  "timestamp": "2026-06-15T16:15:02.100Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "DEBOUNCE_QUEUE",
+  "message": "Message buffered and appended to existing debounce session",
+  "traceId": "t_react_982137_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "buffer_size_chars": 450,
+    "total_buffered_messages": 2
+  }
+}
+```
+
+### 8.3. Log Lập Lịch Nhắc Nhở Chăm Sóc (Follow-up Job Scheduled)
+Ghi log sau khi trả lời tin nhắn thành công, lập lịch hẹn nhắc nhở sau 2 giờ.
+```json
+{
+  "timestamp": "2026-06-15T16:15:15.500Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "FOLLOWUP_QUEUE",
+  "message": "Follow-up reminder job scheduled",
+  "traceId": "t_react_982137_trace",
+  "metadata": {
+    "job_id": "followup:conv_uuid_9921",
+    "conversation_id": "conv_uuid_9921",
+    "delay_ms": 7200000,
+    "scheduled_time": "2026-06-15T18:15:15.500Z"
+  }
+}
+```
+
+### 8.4. Log Hủy Lịch Nhắc Nhở Khi Khách Chủ Động Nhắn Lại (Follow-up Job Cancelled)
+Ghi log khi khách hàng chủ động nhắn lại trước 2 giờ, hệ thống tiến hành xóa job nhắc nhở cũ.
+```json
+{
+  "timestamp": "2026-06-15T16:20:00.050Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "FOLLOWUP_QUEUE",
+  "message": "Existing follow-up job cancelled due to user activity",
+  "traceId": "t_react_982138_trace",
+  "metadata": {
+    "job_id": "followup:conv_uuid_9921",
+    "conversation_id": "conv_uuid_9921"
+  }
+}
+```
+
+---
+
+## 9. Mẫu Log Chuyển Giao & Trả Quyền AI (Chatbot Handover & Handback Logs)
+
+### 9.1. Log Kích Hoạt Chuyển Giao Gửi Tin Tự Động (Chatbot Handover Triggered)
+Ghi log mức `info` khi kích hoạt luồng chuyển giao, gửi tin nhắn tự động chuyển giao và cập nhật state MANUAL.
+```json
+{
+  "timestamp": "2026-06-15T16:22:00.123Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "CHATBOT_HANDOVER_SERVICE",
+  "message": "Chatbot conversation state transitioned to MANUAL",
+  "traceId": "t_react_982139_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "channel": "FACEBOOK",
+    "trigger_reason": "AI Hallucination retry limit exceeded",
+    "notification_message_sent": true
+  }
+}
+```
+
+### 9.2. Log Nhân Viên Bàn Giao Lại Quyền Cho AI (Chatbot Handback Triggered)
+Ghi log mức `info` khi nhân viên tư vấn gọi API để trả quyền cho AI, cập nhật state AUTOMATIC.
+```json
+{
+  "timestamp": "2026-06-15T16:40:00.456Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "CHATBOT_HANDBACK_CONTROLLER",
+  "message": "Chatbot conversation state transitioned to AUTOMATIC",
+  "traceId": "t_react_982140_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "assigned_user_id": "usr_sales_uuid_445",
+    "invalidation_message_sent": true
+  }
+}
+```
+
+
+
 

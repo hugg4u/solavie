@@ -12,8 +12,8 @@ Module Chatbot chịu trách nhiệm tiếp nhận tin nhắn từ người dùn
 
 ### 2.2. Xử lý Ngữ cảnh & Tối ưu hóa (Context & Caching)
 - **Trượt Ngữ Cảnh (Sliding Window):** Giới hạn lịch sử hội thoại gửi lên LLM tối đa **10 lượt chat gần nhất** để kiểm soát chi phí token và tránh quá tải Context Window.
-- **Prompt Caching:** Bắt buộc áp dụng cơ chế Ephemeral Caching (như của Anthropic/OpenAI) cho System Prompt tĩnh.
-  - *KPI:* Giảm ít nhất **80% chi phí token đầu vào** cho mỗi lượt hội thoại tiếp theo trong cùng một phiên chat.
+- **Prompt Caching:** Bắt buộc áp dụng cơ chế Prompt Caching thích ứng động (được cấu trúc hóa theo 4 nhóm cơ chế xử lý cho 17 providers bao gồm OpenAI, Anthropic, Gemini, DeepSeek, Bedrock, Vertex AI, v.v.).
+  - *KPI:* Giảm ít nhất **80% chi phí token đầu vào** cho mỗi lượt hội thoại tiếp theo trong cùng một phiên chat khi sử dụng các provider hỗ trợ cache.
   - *Hiệu năng:* Độ trễ xử lý System Prompt được cache phải giảm từ **~3s xuống <= 500ms**.
 
 ### 2.3. Trích xuất Thực thể (Entity Extraction - NER)
@@ -25,9 +25,12 @@ Module Chatbot chịu trách nhiệm tiếp nhận tin nhắn từ người dùn
 - **Hybrid Search + RRF:** Kết hợp Full-Text Search (Sparse) trên nội dung văn bản và Vector Search (Dense) trên PgVector. Sử dụng thuật toán RRF để xếp hạng lại tài liệu.
   - *Độ chính xác:* Đảm bảo top 3 tài liệu trả về chứa thông tin kỹ thuật chính xác cho câu hỏi của khách hàng.
 
-### 2.5. Hand-off (Bàn giao cho người thật)
-- Tự động nhận diện ý định (Intent Routing) của khách hàng: Nếu phát hiện từ khóa giận dữ, khiếu nại (`COMPLAINT`) hoặc yêu cầu trực tiếp gặp tư vấn viên (`HUMAN_REQUEST`).
-- **Chuyển đổi trạng thái:** Dừng ngay phản hồi AI, cập nhật trạng thái phiên chat sang `MANUAL`, gửi thông báo chào đón của Agent và bắn Noti Push (qua Event Broker) cho chuyên viên Sales.
+### 2.5. Hand-off (Bàn giao cho người thật) & Trả Quyền AI (Handback)
+- **Tự động nhận diện ý định:** Tự động chuyển giao khi phát hiện khách hàng muốn gặp tư vấn viên (`HUMAN_REQUEST`) hoặc AI không tìm được câu trả lời phù hợp trong Knowledge Base (sau 2 lần fallback).
+- **Gửi tin nhắn phản hồi chuyển giao:** Tại thời điểm chuyển giao, hệ thống **bắt buộc phải gửi ngay lập tức** một tin nhắn tự động lịch sự thông báo cho khách hàng (ví dụ: *"Yêu cầu tư vấn của anh/chị đã được chuyển đến kỹ sư hỗ trợ và sẽ phản hồi sớm nhất..."*), đảm bảo khách hàng không phải chờ đợi trong im lặng.
+- **Chuyển đổi trạng thái & Alert:** Dừng ngay phản hồi AI, cập nhật trạng thái phiên chat sang `MANUAL`, và phát sự kiện `chat.handover_requested` qua Event Bus nội bộ. Sự kiện này được Notification Module lắng nghe và chịu trách nhiệm gửi thông báo thời gian thực (In-App WebSocket) cho chuyên viên Sales được gán theo cơ chế Round-Robin.
+- **API Trả Quyền AI (Handback API):** Cung cấp cơ chế cho phép chuyên viên Sales gọi API bàn giao lại cuộc trò chuyện từ `MANUAL` về `AUTOMATIC` để kích hoạt lại AI Chatbot tự động trả lời khi nhân viên hoàn thành tư vấn.
+
 
 ### 2.6. Guardrails (Rào Chắn Bảo Mật & PII)
 - **Input Guardrails (Data Masking):** Bắt buộc ẩn danh (quét bằng Regex) các thông tin nhạy cảm của khách hàng (Số điện thoại, Email, Số thẻ tín dụng) thành `[PHONE_REDACTED]`, `[EMAIL_REDACTED]` trước khi gửi dữ liệu ra ngoài API của các nhà cung cấp LLM.
@@ -39,7 +42,29 @@ Module Chatbot chịu trách nhiệm tiếp nhận tin nhắn từ người dùn
 - **Ngắt luồng & Phản hồi mẫu tĩnh:** Khi `is_in_domain = false`, hệ thống lập tức chấm dứt pipeline (không chạy RAG, không chạy ReAct Agent) và phản hồi tin nhắn mẫu từ chối lịch sự được cấu hình sẵn.
 - *KPI:* Chặn đứng 99% các câu hỏi thuộc chủ đề ngoài phạm vi năng lượng mặt trời (như viết code, làm toán, giải trí...), đồng thời tiết kiệm 100% chi phí token phân loại đối với các lời chào xã giao tĩnh.
 
+### 2.8. Tối ưu hóa hàng đợi (Debounce & Follow-up Queue Tuning)
+- **Tách biệt kết nối Redis:** Các queue BullMQ của chatbot (`chatbot-debounce` và `chatbot-followup`) phải kết nối tới instance Redis chạy chính sách `noeviction` để bảo vệ dữ liệu hàng đợi không bị xóa khi bộ nhớ đầy.
+- **Tối ưu hóa TCP Connection:** Sử dụng cơ chế kết nối dùng chung (Shared connection instance) của `ioredis` để giảm thiểu overhead mở/đóng kết nối liên tục.
+- **Tự động dọn dẹp bộ nhớ:** Các job trong hàng đợi sau khi hoàn thành hoặc thất bại vượt quá giới hạn phải được tự động xóa (`removeOnComplete`, `removeOnFail`) nhằm giải phóng RAM cho Redis.
+
 ## 3. Chỉ Số Hiệu Năng Chính (KPIs)
 - **Độ trễ phản hồi đầu tiên (Time to First Token - TTFT):** Phải đạt **<= 1.5s** thông qua cơ chế Streaming SSE (Server-Sent Events).
 - **Tỷ lệ uptime của Chatbot:** Đạt tối thiểu **99.9%** nhờ cơ chế Failover đa nhà cung cấp trên LLM Gateway.
+
+### 2.9. Tự động Nhận diện và Phản hồi Đa Ngôn Ngữ Động (Dynamic Multilingual Response)
+- **Nhận diện tự động:** Hệ thống tự động nhận diện ngôn ngữ của khách hàng (tiếng Việt, tiếng Anh, tiếng Trung...) mà không làm tăng độ trễ (latency < 1ms, chạy offline trên server).
+- **i18n Fallback tĩnh:** Các tin nhắn tĩnh của hệ thống (lỗi kết nối, thông báo chuyển giao nhân viên...) phải được bản địa hóa qua cấu trúc file JSON nội bộ (`vi.json`, `en.json`, `zh.json`), không gọi LLM để tiết kiệm 100% chi phí token.
+- **Dynamic translation:** Đối với hội thoại AI, LLM tự động dịch tài liệu RAG tiếng Việt sang ngôn ngữ của khách hàng ở đầu ra thông qua chỉ thị ngắn chèn ở cuối prompt, giữ nguyên Prompt Caching của System Prompt tĩnh.
+
+### 2.10. Kiểm thử tự động chất lượng Prompt (Evals Engine)
+- **Golden Dataset:** Hỗ trợ lưu trữ bộ câu hỏi và câu trả lời mẫu chuẩn (ground-truth) để chạy thử nghiệm prompt offline.
+- **LLM-as-a-Judge:** Sử dụng mô hình lớn (được định tuyến qua Gateway kịch bản `EVALS_JUDGE`) để chấm điểm Grounding (độ trung thực, chống ảo giác) và Relevance (độ liên quan câu hỏi) trên thang điểm 1-5, đảm bảo prompt cập nhật không làm suy giảm chất lượng trả lời.
+
+### 2.11. Tích hợp Công cụ AI Đặt Lịch Hẹn (AI Booking Tools)
+- **Hỗ trợ ReAct Agent Tools**: AI Chatbot trong cuộc đối thoại phải có khả năng tự động gọi 2 công cụ khi phát hiện ý định đặt lịch của khách hàng:
+  - `get_booking_slots`: Tra cứu lịch trống của các Sales Rep dựa trên loại cuộc hẹn mẫu.
+  - `create_appointment`: Tạo lịch hẹn chính thức trên hệ thống.
+- **Quy tắc trích xuất thực thể**: Chatbot chỉ được phép gọi công cụ tạo lịch sau khi đã thu thập và xác nhận đầy đủ các thông tin bắt buộc từ khách hàng (Họ tên, SĐT, Email, Khung giờ bắt đầu).
+- **Rào cản kiểm thực dữ liệu (Validation Gate)**: Chatbot cần tự động kiểm tra định dạng số điện thoại Việt Nam trước khi gửi lệnh tạo lịch nhằm giảm thiểu lỗi DB transaction.
+- **Chỉ định Sales Rep**: Khi khách đặt lịch qua link có chứa tham số chỉ định Sales Rep (`?host_id=`), chatbot phải truyền tham số này vào công cụ để khóa lịch rảnh đối với Sales đó.
 

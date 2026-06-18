@@ -15,6 +15,7 @@
 | `sender_id` | VARCHAR(255) | ID khách hàng trên MXH (PSID, Zalo User ID) |
 | `state` | VARCHAR(50) | `AUTOMATIC` (AI trả lời) / `MANUAL` (Người trả lời) |
 | `assignee_id` | UUID | Nhân viên tiếp quản (nếu có, soft link sang `iam_users`) |
+| `customer_id` | UUID | Khách hàng sở hữu cuộc hội thoại (soft link sang `crm_customers`) |
 | `last_message_at` | TIMESTAMP | Thời điểm tin nhắn cuối cùng được gửi (bất kỳ ai gửi) |
 | `last_customer_message_at` | TIMESTAMP | Thời điểm tin nhắn cuối cùng của khách hàng |
 | `followup_status` | VARCHAR(20) | Trạng thái nhắc nhở (`PENDING`, `SENT`, `SKIPPED`) |
@@ -100,6 +101,17 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** qua trường tự liên kết
 | `latency_ms` | INTEGER | | Thời gian xử lý API (Mili giây) |
 | `created_at` | TIMESTAMP | Default NOW() | Thời điểm cuộc gọi |
 
+### 2.8. Bảng `chatbot_outbox_events` (Transactional Outbox)
+Bảng trung gian để đảm bảo tính nhất quán giữa DB Transaction và Event Bus.
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh event |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (Ví dụ: `chat.handover_requested`) |
+| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện |
+| `status` | VARCHAR(20) | Default 'PENDING' | `PENDING`, `PUBLISHED`, `FAILED` |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+| `published_at` | TIMESTAMP | NULLABLE | Thời gian publish thành công |
+
 ## 3. Kiến Trúc RAG (Retrieval-Augmented Generation) & Thuật toán RRF
 Hệ thống sử dụng kiến trúc tìm kiếm lai (Hybrid Search) kết hợp với thuật toán **Reciprocal Rank Fusion (RRF)**:
 
@@ -134,15 +146,34 @@ NestJS sẽ gửi request HTTP POST tới LiteLLM endpoint `http://litellm-gatew
   - `model`: Tên model định dạng `<provider_type>/<model_name>` (Ví dụ: `openai/gpt-4o-mini` hoặc `gemini/gemini-1.5-flash`).
   - `messages`: Mảng hội thoại.
 
+### 4.1.1. Xử lý Payload Prompt Caching Thích Ứng (Prompt Caching Adapter Design)
+Trước khi gửi body request lên LiteLLM Gateway, Core Backend sẽ đưa payload qua lớp BaseLLMAdapter tương ứng để xử lý Prompt Caching theo 4 nhóm cơ chế:
+1. **Nhóm 1 (Automatic Prefix Caching - APC):**
+   - *Providers:* `openai`, `deepseek`, `groq`, `mistral`, `azure`, `xai`, `together_ai`, `qwen`, `replicate`.
+   - *Xử lý:* Đảm bảo System Prompt và Tools được đưa vào mảng `messages` đầu tiên. Không nhúng các biến động vào phần đầu. Đảm bảo phần đầu tĩnh đạt ít nhất 1024 tokens.
+2. **Nhóm 2 (Explicit Caching Flags):**
+   - *Providers:* `anthropic`, `openrouter` (Claude), `bedrock`.
+   - *Xử lý:*
+     - Với `anthropic`/`openrouter`: Thêm header `anthropic-beta: prompt-caching-2024-07-31` và chèn thuộc tính `"cache_control": {"type": "ephemeral"}` vào system prompt block và tool block cuối cùng.
+     - Với `bedrock`: Đính kèm đối tượng `cachePoint` vào các trường system/messages/tools của Converse API.
+3. **Nhóm 3 (Context Caching API):**
+   - *Providers:* `google`, `vertex_ai`.
+   - *Xử lý:* Nếu token dài >= 32,768, NestJS gọi API `/v1beta/cachedContents` để upload phần context tĩnh lên Google server, nhận về `cachedContent` token, sau đó chèn `"cachedContent": "cachedContents/<id>"` vào request body.
+4. **Nhóm 4 (Custom Caching):**
+   - *Providers:* `cohere`, `perplexity`, `voyage`.
+   - *Xử lý:* Cohere tự động tối ưu hóa RAG cục bộ. Perplexity không cache (chỉ tối ưu hóa tokens). Voyage lưu trữ embeddings cục bộ.
+
 ### 4.2. API Endpoints Quản Lý Cấu Hình (Admin API)
 - `GET /api/v1/gateway/providers`: Lấy danh sách provider và trạng thái.
-- `POST /api/v1/gateway/providers`: Thêm mới cấu hình API Key và thiết lập priority.
-- `PUT /api/v1/gateway/providers/:id`: Cập nhật API Key, priority hoặc trạng thái.
+- `POST /api/v1/gateway/providers`: Thêm mới cấu hình API Key và thiết lập priority (Yêu cầu header `Idempotency-Key`).
+- `PUT /api/v1/gateway/providers/:id`: Cập nhật API Key, priority hoặc trạng thái (Yêu cầu header `Idempotency-Key`).
 - `GET /api/v1/gateway/usecases`: Lấy danh sách cấu hình usecases hiện tại.
 - `PATCH /api/v1/gateway/usecases/:id`: Cập nhật cấu hình chọn model (`provider_model_id`) cho kịch bản cụ thể.
 - `POST /api/v1/gateway/models/sync`: API kích hoạt công việc (Sync Job) bằng tay để đồng bộ hóa danh sách Model, Context và chi phí từ LiteLLM Gateway `/public/litellm_model_cost_map`.
 - **`GET /api/v1/gateway/metrics/summary`**: Thống kê tổng hợp chi phí AI theo thời gian (ngày/tuần/tháng), phân nhóm theo usecase, model hoặc provider để phục vụ vẽ chart Admin.
 - **`GET /api/v1/gateway/metrics/raw`**: Lấy lịch sử chi tiết danh sách cuộc gọi AI (Hỗ trợ phân trang, lọc theo usecase, model, provider, conversation_id).
+- **`POST /api/v1/chat/conversations/:id/handback`**: Bàn giao lại cuộc trò chuyện từ chế độ `MANUAL` về `AUTOMATIC` để kích hoạt lại AI Chatbot phản hồi tự động.
+
 
 ## 5. Thiết Kế Cơ Chế Dynamic Debounce & Khóa Đồng Thời (Redis & BullMQ)
 
@@ -203,7 +234,11 @@ sequenceDiagram
             else Phát hiện ảo giác / nội dung cấm (HALLUCINATED)
                 Guard-->>Consumer: Báo lỗi ảo giác
                 Consumer->>Agent: Gọi Agent sinh lại phản hồi (Retry tối đa 2 lần)
-                Note over Consumer, Agent: Nếu vẫn lỗi, chuyển trạng thái MANUAL báo Sales
+                alt Vẫn lỗi sau 2 lần thử lại (Handover Trigger)
+                    Consumer->>Customer: Gửi tin nhắn chuyển giao mẫu (Handover Message)
+                    Consumer->>DB: Cập nhật state = MANUAL, assignee_id = null và ghi event vào chatbot_outbox_events (Transaction)
+                    Consumer->>EventBroker: Outbox Worker publish sự kiện báo Sales hỗ trợ
+                end
             end
         end
         Consumer->>Redis: Xóa khóa DEL lock:conversation:{id}
@@ -337,6 +372,200 @@ Nếu `is_in_domain = false`, hệ thống tự động trả về chuỗi phả
 Dạ, em là Trợ lý ảo chuyên tư vấn giải pháp Điện năng lượng mặt trời của Solavie. Hiện tại em chưa được đào tạo để trả lời các chủ đề ngoài lĩnh vực này. Anh/chị có câu hỏi nào về pin mặt trời, inverter hoặc chi phí lắp đặt cần em hỗ trợ không ạ?
 ```
 Lịch sử tin nhắn từ chối tĩnh này sẽ được ghi vào cơ sở dữ liệu với `sender_type = 'AI'` để bảo toàn ngữ cảnh hội thoại.
+
+---
+
+## 11. Thiết Kế Hạ Tầng Redis & BullMQ (Chatbot Queue Optimizations)
+
+Để đảm bảo hiệu năng tối ưu cho các tác vụ hàng đợi của Chatbot (Debounce tin nhắn và nhắc nhở khách hàng), hệ thống áp dụng các nguyên tắc thiết kế hạ tầng sau:
+
+### 11.1. Phân tách Instance Redis (Redis Isolation)
+*   **Kết nối:** Các hàng đợi `chatbot-debounce` và `chatbot-followup` bắt buộc kết nối tới `REDIS_QUEUE_URL` (không kết nối tới `REDIS_CACHE_URL` để tránh việc cache IAM bị xóa làm ảnh hưởng đến các job hàng đợi).
+*   **Chính sách bộ nhớ:** Instance Redis này chạy ở cấu hình `maxmemory-policy noeviction` nhằm đảm bảo tính an toàn dữ liệu, không bao giờ bị mất job hàng đợi.
+
+### 11.2. Shared Connection Pool
+Để hạn chế số lượng TCP Connection kết nối đồng thời từ các Worker NestJS tới Redis Server, hệ thống thiết lập:
+- Khởi tạo **một thực thể `ioredis` duy nhất** cho toàn bộ Chatbot Module.
+- Thực thể này được truyền vào cấu hình của các hàng đợi `chatbot-debounce` và `chatbot-followup`.
+
+### 11.3. Cấu hình giới hạn lưu trữ Job (Job Retention Policy)
+Để tránh phình to bộ nhớ RAM của Redis, các hàng đợi áp dụng chính sách tự động xóa job sau khi xử lý:
+- **Hàng đợi `chatbot-debounce`:**
+  - `removeOnComplete`: `{ age: 1800, count: 50 }` (Xóa ngay sau 30 phút hoặc chỉ giữ 50 jobs completed gần nhất).
+  - `removeOnFail`: `{ age: 3600, count: 100 }` (Xóa sau 1 tiếng hoặc chỉ giữ 100 jobs failed).
+- **Hàng đợi `chatbot-followup`:**
+  - `removeOnComplete`: `{ age: 86400, count: 200 }` (Xóa sau 24 giờ hoặc giữ tối đa 200 jobs).
+  - `removeOnFail`: `{ age: 172800, count: 500 }` (Giữ tối đa 500 jobs lỗi trong 48 giờ để phục vụ debug).
+
+---
+
+## 12. Thiết Kế Đa Ngôn Ngữ Động (Dynamic Multilingual Response)
+
+Để tối ưu hóa trải nghiệm khách hàng đa quốc gia mà vẫn đảm bảo tính kinh tế học token, chatbot Solavie áp dụng cơ chế tự động nhận diện ngôn ngữ và phản hồi thích ứng:
+
+### 12.1. Bộ Nhận Diện Ngôn Ngữ Offline (Language Detector)
+*   **Thư viện:** Tích hợp gói npm `languagedetect` hoặc `franc` tại backend NestJS.
+*   **Hiệu năng:** Tốc độ xử lý `< 1ms` trên CPU, tiêu tốn 0 token API.
+*   **Mã ngôn ngữ hỗ trợ mặc định:** `vi` (Vietnamese), `en` (English), `zh` (Chinese).
+*   **Luồng hoạt động:**
+    1. Khi tin nhắn gộp từ khách được trích xuất từ Debounce buffer, nội dung câu hỏi được gửi qua `LanguageDetectorService.detectLanguage(text)`.
+    2. Nếu độ tin cậy thấp hoặc không phát hiện được, hệ thống tự động fallback về mã mặc định là `vi`.
+
+### 12.2. i18n Localization cho Tin nhắn Tĩnh
+*   **Cấu trúc thư mục:** `src/common/i18n/` chứa các tệp JSON bản địa hóa tĩnh:
+    *   `vi.json`:
+        ```json
+        {
+          "handover_message": "Yêu cầu tư vấn của anh/chị đã được chuyển đến kỹ sư hỗ trợ và sẽ phản hồi sớm nhất...",
+          "ood_message": "Dạ, em là Trợ lý ảo chuyên tư vấn giải pháp Điện năng lượng mặt trời của Solavie. Hiện tại em chưa được đào tạo để trả lời các chủ đề ngoài lĩnh vực này..."
+        }
+        ```
+    *   `en.json`:
+        ```json
+        {
+          "handover_message": "Your consultation request has been forwarded to our support engineer and we will reply as soon as possible...",
+          "ood_message": "Hello, I am Solavie's AI Assistant for solar energy solutions. Currently, I am only trained to answer topics in this field..."
+        }
+        ```
+*   **Định tuyến:** Nếu tin nhắn thuộc dạng phản hồi mẫu tĩnh (OOD hoặc Handover), backend sẽ lấy bản dịch từ các tệp này dựa trên mã ngôn ngữ đã phát hiện và gửi trả ngay lập tức cho người dùng, hoàn toàn bỏ qua việc gọi LLM.
+
+### 12.3. Dynamic Translation trong LLM Chatbot (Chỉ Thị Dịch Ngữ Động)
+*   Đối với hội thoại AI, Core Prompt (tiếng Anh) và RAG Context (tiếng Việt) được gửi lên LLM. Để bắt buộc LLM trả về đúng ngôn ngữ của khách hàng mà không làm mất Prompt Caching của System Prompt tĩnh, ta chèn thêm một khối **Language Directive** ở cuối prompt:
+    ```markdown
+    [LANGUAGE PROTOCOL]
+    - The customer is querying in: English (ISO: en).
+    - You MUST generate the final response in the EXACT same language: English.
+    - Translate the retrieved Vietnamese RAG Context details to English accurately for the Final Answer.
+    ```
+    *Lưu ý:* directive này được chèn sau điểm ngắt cache breakpoint (ở mảng tin nhắn mới nhất), giữ nguyên block System Prompt và Tools được cache KV tensors vĩnh viễn ở đầu.
+
+---
+
+## 13. Thiết Kế Evals Engine (LLM-as-a-Judge)
+
+Evals Engine giúp chạy thử và chấm điểm tự động chất lượng câu trả lời của Chatbot ngoại tuyến nhằm đảm bảo prompt cập nhật không làm giảm chất lượng hệ thống.
+
+### 13.1. Quy trình chạy Evals
+1.  **Trigger API:** Admin gọi REST API `POST /api/v1/chatbot/evals/run` kèm theo `prompt_variables` cần thử nghiệm.
+2.  **Khởi tạo Lượt chạy:** Tạo một mã `eval_run_id` (UUID) ngẫu nhiên.
+3.  **Duyệt Dataset:** Load toàn bộ các test case từ bảng `chat_eval_datasets`.
+4.  **Sinh câu trả lời thực tế:** Với mỗi test case, chạy chatbot mô phỏng (gửi câu hỏi + nạp context chuẩn + nạp variables thử nghiệm) để thu về câu trả lời thực tế (`actual_output`).
+5.  **Chấm điểm tự động qua LLM Judge:** Gửi yêu cầu chấm điểm lên mô hình Judge lớn (định tuyến qua Gateway `EVALS_JUDGE` - ví dụ `gpt-4o` hoặc `claude-3-5-sonnet`) kèm prompt chấm điểm chuẩn hóa.
+6.  **Ghi DB:** Chèn kết quả điểm số Grounding, Relevance, Feedback của Judge và Latency vào bảng `chat_eval_results`.
+
+### 13.2. Prompt thiết kế cho LLM-as-a-Judge
+
+Mô hình Judge sẽ nhận Prompt thiết kế sau để trả về kết quả định dạng JSON:
+
+```markdown
+You are an expert AI evaluator. Your job is to grade the performance of a chatbot based on the retrieved context, the user query, the ground-truth expected answer, and the actual chatbot answer.
+
+Evaluate the chatbot response on two dimensions (each from 1.00 to 5.00):
+1. **Grounding Score (Faithfulness):** How well does the actual answer stay grounded in the provided Context? If it hallucinates facts not mentioned in the Context, score it low.
+2. **Relevance Score:** How well does the actual answer directly address the User Query, and how similar is its semantic meaning to the Expected Answer?
+
+Provide your output strictly as a JSON object with the following format:
+{
+  "grounding_score": 4.5,
+  "relevance_score": 4.0,
+  "feedback": "Explain the reasoning behind your scores in 2-3 sentences."
+}
+
+[INPUTS]
+- Context:
+{context}
+
+- User Query:
+{query}
+
+- Expected Answer (Ground-truth):
+{expected_answer}
+
+- Actual Chatbot Answer:
+{actual_answer}
+```
+
+---
+
+## 14. Thiết Kế Công Cụ AI Đặt Lịch Hẹn (AI Booking Tools for Chatbot ReAct Agent)
+
+Để cho phép AI Chatbot tự động tra cứu lịch trống và tạo cuộc hẹn trực tiếp trong khi chat, ReAct Agent được tích hợp 2 công cụ (Tools) với schema chuẩn hóa như sau:
+
+### 14.1. Công cụ Tra cứu Khung giờ Trống (`get_booking_slots`)
+*   **Mô tả**: Cho phép AI Chatbot truy vấn danh sách các khung giờ trống của nhân viên Sales cho một loại sự kiện cụ thể.
+*   **Function JSON Schema**:
+    ```json
+    {
+      "name": "get_booking_slots",
+      "description": "Tra cứu các khung giờ trống khả dụng để đặt lịch hẹn với nhân viên Sales.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type_slug": {
+            "type": "string",
+            "description": "Slug của loại sự kiện, ví dụ: 'tu-van-online' hoặc 'khao-sat-thuc-dia'."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Ngày bắt đầu tìm kiếm lịch trống (định dạng YYYY-MM-DD)."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Ngày kết thúc tìm kiếm lịch trống (định dạng YYYY-MM-DD)."
+          }
+        },
+        "required": ["event_type_slug", "start_date", "end_date"]
+      }
+    }
+    ```
+
+### 14.2. Công cụ Đăng ký Lịch hẹn (`create_appointment`)
+*   **Mô tả**: Cho phép AI Chatbot tự động thay mặt khách hàng đăng ký cuộc hẹn sau khi khách hàng đã chọn xong một khung giờ phù hợp.
+*   **Function JSON Schema**:
+    ```json
+    {
+      "name": "create_appointment",
+      "description": "Tạo lịch hẹn chính thức giữa khách hàng và nhân viên Sales cho khung giờ đã chọn.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type_slug": {
+            "type": "string",
+            "description": "Slug của loại sự kiện, ví dụ: 'tu-van-online' hoặc 'khao-sat-thuc-dia'."
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Thời điểm bắt đầu cuộc hẹn (định dạng ISO 8601, ví dụ: '2026-06-17T09:00:00.000Z')."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Họ và tên của khách hàng."
+          },
+          "customer_phone": {
+            "type": "string",
+            "description": "Số điện thoại liên hệ của khách hàng."
+          },
+          "customer_email": {
+            "type": "string",
+            "description": "Địa chỉ email của khách hàng."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Ghi chú bổ sung hoặc địa chỉ lắp đặt nếu là khảo sát thực địa."
+          }
+        },
+        "required": [
+          "event_type_slug",
+          "start_time",
+          "customer_name",
+          "customer_phone",
+          "customer_email"
+        ]
+      }
+    }
+    ```
+
+
 
 
 

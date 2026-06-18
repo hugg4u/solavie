@@ -3,8 +3,8 @@
 Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5 Phase triển khai tuần tự theo thực tiễn tốt nhất (Best Practice):
 
 ## Phase 1: Setup Infrastructure & Base LLM Engine
-- [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics` và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`.
-- [ ] **LLM Gateway (LiteLLM):** Thiết lập docker-compose để chạy service LiteLLM proxy ở chế độ pass-through.
+- [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics`, bảng `chatbot_outbox_events` (cho Transactional Outbox) và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`.
+- [x] **LLM Gateway (LiteLLM):** Cấu hình container LiteLLM (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
 - [ ] **LLM Base Adapter:** Khai báo Interface `BaseLLMAdapter` trong NestJS.
 - [ ] **OpenAI Compatible Client:** Triển khai class adapter kết nối tới LiteLLM sử dụng OpenAI SDK, hỗ trợ nạp động API Key từ Header.
 - [ ] **Lazy Load Registry:** Triển khai class Registry/Factory để load động và cache instances adapter.
@@ -24,6 +24,8 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **ReAct Agent Loop:** Xây dựng core logic cho ReAct Agent (`Thought -> Action -> Observation`), giới hạn tối đa 3 iterations.
 - [ ] **CRM Tool Integration:** Triển khai tool `crm_create_lead` gọi API sang CRM Module để tạo Lead.
 - [ ] **RAG Tool Integration:** Triển khai tool `get_solar_knowledge` kết nối với RAG Pipeline.
+- [ ] **Booking Slots Lookup Tool:** Triển khai tool `get_booking_slots` gọi sang Booking Module (`AvailableSlotsService`) để lấy các slot trống của nhân viên Sales.
+- [ ] **Booking Appointment Creation Tool:** Triển khai tool `create_appointment` gọi sang Booking Module (`AppointmentService`) để tự động tạo cuộc hẹn cho khách hàng khi chốt slot.
 
 ## Phase 4: Guardrails & Optimization
 - [ ] **PII Masking Guardrail:** Viết NestJS Interceptor quét và che giấu (Redact) SĐT, Email, Số thẻ của khách hàng ở đầu vào.
@@ -34,8 +36,15 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **BullMQ Follow-up Scheduler:** Thiết lập hàng đợi BullMQ `chatbot-followup` để tự động nhắc nhở khách hàng sau 2 giờ im lặng (gọi LLM sinh tin nhắn động nếu ở chế độ `AUTOMATIC` hoặc alert Sales nếu ở chế độ `MANUAL`).
 - [ ] **Quiet Hours Guard:** Viết logic hoãn gửi nhắc nhở trong khung giờ [22h00 - 07h00] sáng và tự động reschedule sang 08h00 sáng hôm sau.
 - [ ] **Gateway Circuit Breaker (Cooldown):** Triển khai logic đếm lỗi trên Redis (errors count) và cách ly 15 phút (cooldown key) đối với các Provider lỗi liên tiếp 3 lần.
-- [ ] **Multi-Provider Prompt Caching Adaptation:** Hiện thực hóa logic chèn cờ cache động trong Adapter tương ứng với Anthropic (header, `cache_control` block) và Gemini (cachedContents API) để giảm chi phí đầu vào.
-- [ ] **System Prompt Optimization:** Cấu trúc lại System Prompt để tối ưu hóa tính năng Prompt Caching (đảm bảo phần tĩnh đứng đầu và vượt ngưỡng 1024 tokens).
+- [ ] **Multi-Provider Prompt Caching Adaptation:** Hiện thực hóa logic Prompt Caching thích ứng động cho 17 LLM providers chia làm 4 nhóm cơ chế xử lý (APC cho OpenAI/DeepSeek/Groq/Mistral/Azure/xAI/TogetherAI/Qwen/Replicate, explicit flags cho Anthropic/OpenRouter/Bedrock, cachedContents cho Gemini/VertexAI, và custom configs cho cohere/perplexity/voyage).
+- [ ] **System Prompt Optimization:** Cấu trúc lại System Prompt và Tools tĩnh để tối ưu hóa tính năng Prompt Caching (đảm bảo phần tĩnh đứng đầu và vượt ngưỡng 1024 tokens đối với nhóm 1 & 2).
+- [ ] **Redis Isolation Config:** Cấu hình kết nối chatbot queue tới `REDIS_QUEUE_URL` chuyên dụng (maxmemory-policy `noeviction`) để tránh mất job.
+- [ ] **BullMQ Shared Connection & Cleanup Config:** Triển khai instance `ioredis` dùng chung cho Chatbot module để chia sẻ kết nối, cấu hình dọn dẹp job tự động (`removeOnComplete`, `removeOnFail`) và cơ chế retry backoff cho debounce và follow-up queues.
+- [ ] **Migration Add Customer ID:** Tạo file migration thêm cột `customer_id` (UUID, soft link) vào bảng `chat_conversations`.
+- [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`.
+- [ ] **Handover Message Logic:** Triển khai `ChatbotHandoverService` tự động gửi tin nhắn phản hồi lịch sự ngay lập tức khi chuyển chế độ sang `MANUAL`. (Tin nhắn này gửi ra ngoài cho khách qua Facebook/Zalo API — khác với notification nội bộ cho Sales.)
+- [ ] **Handback API Implementation:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm guard phân quyền `chat:write` và bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate).
+- [ ] **Chatbot Outbox Worker:** Triển khai Cronjob/BullMQ Worker để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus.
 
 ## Phase 5: Centralized Logging, Sync Job & Monitoring
 - [ ] **Structured Logging:** Cấu hình Winston Logger để ghi log dạng JSON ra stdout phục vụ Promtail scrape.
@@ -44,5 +53,19 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Manual Sync Endpoint:** Triển khai API `/api/v1/gateway/models/sync` cho phép Admin kích hoạt đồng bộ model bằng tay.
 - [ ] **Admin Cost Analytics API:** Triển khai các API endpoints `/api/v1/gateway/metrics/summary` và `/metrics/raw` phục vụ vẽ biểu đồ báo cáo tài chính AI.
 
+## Phase 6: Prompt Optimization & Evals Engine
+- [ ] **Migration for Evals Tables:** Tạo file migration và Entities cho hai bảng `chat_eval_datasets` và `chat_eval_results`.
+- [ ] **Language Detector Service:** Tích hợp gói npm phân tích ngôn ngữ offline, xây dựng `LanguageRouterService` nhận diện ngôn ngữ của khách hàng trong <= 1ms.
+- [ ] **i18n Translation Configuration:** Tạo cấu trúc tệp JSON dịch thuật tĩnh cho `vi.json`, `en.json`, `zh.json` và tích hợp vào chatbot để gửi tin nhắn hệ thống (Handover, OOD) mà không tiêu hao LLM tokens.
+- [ ] **Prompt Interpolation Manager:** Triển khai `PromptInterpolationManager` để tự động ghép nối System Prompt tĩnh, dynamic prompt variables từ Redis cache/DB và Language Output Directive.
+- [ ] **LLMLingua-2 Compression Client:** Xây dựng HttpClient để kết nối tới LLMLingua-2 Microservice, thực hiện nén phân cấp RAG (0.4) và History (0.6) khi prompt vượt quá 3000 tokens.
+- [ ] **Evals Engine Service:** Hiện thực hóa `EvalsService` chạy mô phỏng hội thoại cho tập dataset và tự động gửi API chấm điểm NLI Grounding/Relevance qua mô hình Judge lớn (`EVALS_JUDGE` ở Gateway).
+- [ ] **Evals Execution API:** Khai báo API route `POST /api/v1/chatbot/evals/run` để Admin kích hoạt chạy evals kiểm thử prompt.
 
-
+## Phase 7: Event Integration Tests
+- [ ] **Handover Event Test:** Viết integration test kiểm tra khi `triggerHandover()` được gọi:
+  - State chuyển thành `MANUAL` trong DB.
+  - Tin nhắn cầu lịch sự được gửi ra ngoài cho khách.
+  - Sự kiện `chat.handover_requested` được lưu vào `chatbot_outbox_events`.
+- [ ] **Idempotency Integration Tests:** Kiểm tra các API POST admin và handback xử lý đúng khi trùng `Idempotency-Key`.
+- [ ] **No Duplicate Notification Test:** Kiểm tra Chatbot Module không tự gửi WebSocket trực tiếp cho Sales (chức năng đó thuộc Notification Module).
