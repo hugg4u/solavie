@@ -28,7 +28,7 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 - [ ] **AppointmentConfirmedEvent Class:** Tạo class `AppointmentConfirmedEvent` và `AppointmentCancelledEvent` trong `booking/events/` chứa đầy đủ payload (eventId, salesInfo, customerInfo, meetLink, locationType).
 - [ ] **Ghi outbox appointment.confirmed:** Sau khi thao tác thành công, ghi bản ghi vào `booking_outbox_events` loại `appointment.confirmed` với payload.
 - [ ] **Ghi outbox appointment.cancelled:** Trong `cancelAppointment()` và `rescheduleAppointment()`, ghi sự kiện `appointment.cancelled` vào bảng Outbox kèm `cancelReason`.
-- [ ] **Booking Outbox Worker:** Dựng Cronjob/BullMQ Worker quét `booking_outbox_events` định kỳ và đẩy ra Event Bus, đổi trạng thái sang PROCESSED.
+- [ ] **Booking Outbox Sweeper:** Dựng BullMQ Processor và Cronjob Sweeper quét `booking_outbox_events` định kỳ và đẩy ra Event Bus, đổi trạng thái sang PROCESSED.
 - [ ] **Xóa ReminderScheduler Service:** Loại bỏ `ReminderScheduler` cũ (nếu đã viết), dọn dependencies BullMQ khỏi `BookingModule` vì giờ đây được quản lý bởi `NotificationModule`.
 - [ ] **Inject Sales Info:** Đảm bảo `AppointmentService` đã lookup và truyền `salesUser.full_name` và `salesUser.email` vào payload event (có thể query qua `IamUserRepository` qua soft link).
 

@@ -285,7 +285,7 @@ await this.outboxRepo.save({
 });
 
 // NOTE: Notification Module sẽ tự động lên lịch reminder 24h và 1h dựa trên startTime
-// Booking Outbox Worker sẽ quét bảng booking_outbox_events và đẩy đi.
+// Booking Outbox Sweeper sẽ quét bảng booking_outbox_events và đẩy đi.
 ```
 
 ### 3.3. Emit Event Hủy Lịch
@@ -300,7 +300,7 @@ await this.outboxRepo.save({
     cancelReason: dto.reason,
   }
 });
-// Booking Outbox Worker sẽ quét bảng và đẩy đi.
+// Booking Outbox Sweeper sẽ quét bảng và đẩy đi.
 ```
 
 ---

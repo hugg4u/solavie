@@ -17,7 +17,7 @@
 - `[ ]` **Device Fingerprint Detection:** Trong `AuthService.login()`, thêm logic so sánh `(ip, user-agent)` với lịch sử đăng nhập (luu trong Redis hoặc DB). Nếu phát hiện thiết bị mới, emit sự kiện `auth.login_new_device`.
 - `[ ]` **Emit auth.login_new_device:** Ghi sự kiện vào `iam_outbox_events` (có `eventId`) trong `AuthService.login()` chung với các tác vụ DB để gửi Email cảnh báo bảo mật.
 - `[ ]` **Emit permission.changed:** Trong `RoleService.assignRole()` và `PermissionService.updatePermissions()`, sau khi cập nhật DB và invalidate cache thành công, ghi `permission.changed` vào `iam_outbox_events` kèm `affectedUserId`, `changedBy`, `changeType`, `detail`.
-- `[ ]` **IAM Outbox Worker:** Dựng Cronjob/BullMQ định kỳ quét bảng `iam_outbox_events` (trạng thái PENDING) và publish vào Event Bus, sau đó đổi trạng thái thành PROCESSED.
+- `[x]` **IAM Outbox Processor & Sweeper:** Dựng BullMQ Processor xử lý realtime. Dựng Cronjob Sweeper (dùng `SKIP LOCKED`) định kỳ quét bảng `iam_outbox_events` (trạng thái PENDING) để publish bù vào BullMQ, sau đó đổi trạng thái thành PROCESSED.
 - `[ ]` **Integration Tests:** Viết test kiểm tra:
   - Login từ IP mới → event `auth.login_new_device` được ghi vào Outbox.
   - Thay đổi role → Redis cache bị xóa → event `permission.changed` được ghi vào Outbox.
