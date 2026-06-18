@@ -72,35 +72,35 @@
 
 ### Phase 1: Dockerfile & Base Setup
 
-- [ ] **DEV-01:** Multi-stage `Dockerfile` (Stage 1: build TS → Stage 2: node-alpine production)
-- [ ] **DEV-02:** Cấu hình `.dockerignore` (loại bỏ `node_modules`, `dist`, logs)
-- [ ] **DEV-03:** Soạn `.env.example` đầy đủ (DB, Redis x2, MinIO, LiteLLM, JWT, AES Key, SMTP, Zalo)
+- [x] **DEV-01:** Multi-stage `Dockerfile` (Stage 1: build TS → Stage 2: node-alpine production)
+- [x] **DEV-02:** Cấu hình `.dockerignore` (loại bỏ `node_modules`, `dist`, logs)
+- [x] **DEV-03:** Soạn `.env.example` đầy đủ (DB, Redis x2, MinIO, LiteLLM, JWT, AES Key, SMTP, Zalo)
 
 ### Phase 2: Docker Compose Orchestration
 
-- [ ] **DEV-04:** Service `postgres` (image `ankane/pgvector:v0.5.1`) + healthcheck `pg_isready`
-- [ ] **DEV-05:** Service `redis-cache` (port 6379, `allkeys-lru`, 512MB) + healthcheck
-- [ ] **DEV-06:** Service `redis-queue` (port 6380, `noeviction`, `appendonly yes`, 1GB) + healthcheck
-- [ ] **DEV-07:** Service `minio` (port 9000 API, 9001 Console) + healthcheck
-- [ ] **DEV-08:** Service `litellm` (AI proxy) + healthcheck
-- [ ] **DEV-09:** Service `mailhog` (development SMTP preview, port 8025 UI)
-- [ ] **DEV-10:** `depends_on` với `service_healthy` cho NestJS backend
+- [x] **DEV-04:** Service `postgres` (image `ankane/pgvector:v0.5.1`) + healthcheck `pg_isready`
+- [x] **DEV-05:** Service `redis-cache` (port 6379, `allkeys-lru`, 512MB) + healthcheck
+- [x] **DEV-06:** Service `redis-queue` (port 6380, `noeviction`, `appendonly yes`, 1GB) + healthcheck
+- [x] **DEV-07:** Service `minio` (port 9000 API, 9001 Console) + healthcheck
+- [x] **DEV-08:** Service `litellm` (AI proxy) + healthcheck
+- [x] **DEV-09:** Service `mailhog` (development SMTP preview, port 8025 UI)
+- [x] **DEV-10:** `depends_on` với `service_healthy` cho NestJS backend
 
 ### Phase 3: Persistence & Init
 
-- [ ] **DEV-11:** Persistent volumes cho `pg_data`, `minio_data`, `redis_cache_data`, `redis_queue_data`
-- [ ] **DEV-12:** MinIO auto-bucket creation script (4 buckets: `rag-documents`, `customer-media`, `user-media`, `system-assets`)
+- [x] **DEV-11:** Persistent volumes cho `pg_data`, `minio_data`, `redis_cache_data`, `redis_queue_data`
+- [x] **DEV-12:** MinIO auto-bucket creation script (4 buckets: `rag-documents`, `customer-media`, `user-media`, `system-assets`)
 
 ### Phase 4: Notification Env Setup
 
-- [ ] **DEV-13:** Thêm Email env vars vào `.env.example`: `SMTP_*`, `AWS_SES_*`, `NOTIFICATION_FROM_*`
-- [ ] **DEV-14:** Thêm Zalo env vars: `ZALO_OA_ID`, `ZALO_OA_ACCESS_TOKEN`, `ZALO_ZNS_SECRET_KEY`
-- [ ] **DEV-15:** `ConfigModule` validation throw error nếu thiếu biến bắt buộc
+- [x] **DEV-13:** Thêm Email env vars vào `.env.example`: `SMTP_*`, `AWS_SES_*`, `NOTIFICATION_FROM_*`
+- [x] **DEV-14:** Thêm Zalo env vars: `ZALO_OA_ID`, `ZALO_OA_ACCESS_TOKEN`, `ZALO_ZNS_SECRET_KEY`
+- [x] **DEV-15:** `ConfigModule` validation throw error nếu thiếu biến bắt buộc
 
 ### Phase 5: Security & Hardening
 
-- [ ] **DEV-16:** Dockerfile Stage 2 sử dụng `USER node` (non-root)
-- [ ] **DEV-17:** Kiểm tra production image size < 150MB
+- [x] **DEV-16:** Dockerfile Stage 2 sử dụng `USER node` (non-root)
+- [x] **DEV-17:** Kiểm tra production image size < 150MB
 
 ---
 
