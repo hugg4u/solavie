@@ -47,24 +47,46 @@ graph TD
         GW -->|Emit: message.received| EventBroker[Event Broker / Redis Pub/Sub]
         
         EventBroker -->|Subscribe: message.received| CB[Chatbot Orchestrator Module]
+        EventBroker -->|Subscribe: message.received| IB[Agent Inbox Module]
         
         CB -->|Internal API Request| GatewayLLM[LLM Gateway / LiteLLM Proxy Container]
         GatewayLLM -->|API Request| AI_Adapter[AI Core Service / External Providers]
         
         CB -->|Emit: lead.extracted| EventBroker
+        CB -->|Emit: chat.handover_requested| EventBroker
+        CB -->|Tool Call / Query slots| BK[Booking Module]
+        
+        IB -->|Emit: inbox.agent_mentioned| EventBroker
         
         EventBroker -->|Subscribe: lead.extracted| CRM[CRM Module]
-        
         EventBroker -->|Subscribe: lead.extracted| IAM[IAM Module]
+        EventBroker -->|Subscribe: appointment.confirmed| CRM
+        
+        CRM -->|Emit: lead.assigned / lead.score_hot| EventBroker
+        BK  -->|Emit: appointment.confirmed / cancelled| EventBroker
+        IAM -->|Emit: permission.changed / auth.login_new_device| EventBroker
+        
+        %% Notification Module consumes all events
+        EventBroker -->|Subscribe: ALL notification events| NF[Notification Module]
+        NF -->|WebSocket: In-App| Admin
+        NF -->|BullMQ Jobs| NF_Q[(Redis Queue Port 6380 - Notification Queues)]
+        
+        IB -->|WebSockets| Admin
         
         %% Database Isolations
-        CB ---> DB_Chat[(DB: Conversations / Messages)]
-        CRM ---> DB_CRM[(DB: Leads / Customers)]
-        IAM ---> DB_IAM[(DB: Users / Roles / Audit Logs)]
+        CB ----> DB_Chat[(DB: Conversations / Messages)]
+        IB ----> DB_Inbox[(DB: Quick Replies / Internal Comments)]
+        CRM ----> DB_CRM[(DB: Leads / Customers)]
+        IAM ----> DB_IAM[(DB: Users / Roles / Audit Logs)]
+        BK ----> DB_Booking[(DB: Event Types / Availabilities / Appointments)]
+        NF ----> DB_Notif[(DB: Notif Logs / Templates / Preferences)]
     end
 
-    %% External RAG Database
-    CB ---> DB_Vector[(DB: PgVector / RAG Knowledge)]
+    %% External & Services
+    CB ----> DB_Vector[(DB: PgVector / RAG Knowledge)]
+    BK -->|Query Busy Slots| GCal[Google Calendar API]
+    NF_Q -->|Email delivery| SES[AWS SES / SMTP]
+    NF_Q -->|ZNS delivery| ZALO_API[Zalo ZNS API]
 ```
 
 ---
@@ -92,6 +114,19 @@ graph TD
 * **Vai trò**: Xác thực người dùng (Authentication) và phân quyền động (Dynamic Permissions Guard). Lưu trữ Audit Log JSON cho các thao tác đổi quyền.
 * **Database sở hữu**: `iam_users`, `iam_roles`, `iam_permissions`, `iam_policies`, `iam_role_audit_logs`.
 
+### 3.5. Agent Inbox Module (Sales Chat Portal)
+* **Vai trò**: Cung cấp giao diện hộp thư tập trung (Unified Inbox Feed) cho nhân viên Sales, kết nối WebSockets thời gian thực, quản lý phân chia cuộc chat (Round-Robin/Claim), chống đụng độ phản hồi (Collision Detection), và thảo luận nội bộ (Internal Comments).
+* **Database sở hữu**: `inbox_quick_replies`, `inbox_internal_comments` (Soft link liên kết mềm sang `chat_conversations`).
+
+### 3.6. Booking Module (Đặt Lịch Hẹn)
+* **Vai trò**: Quản lý lịch biểu của nhân viên Sales, tính toán giờ trống khả dụng thông qua màng lọc thụ động Google Calendar, phân phối lịch hẹn xoay vòng Round-Robin qua Redis, tự động đồng bộ CRM và **phát sự kiện** (`appointment.confirmed`, `appointment.cancelled`) để Notification Module xử lý nhắc nhở.
+* **Database sở hữu**: `booking_event_types`, `booking_availabilities`, `booking_appointments` (Soft link liên kết mềm sang `iam_users` và `crm_customers`).
+
+### 3.7. Notification Module (Thông Báo Đa Kênh)
+* **Vai trò**: Tiêu thụ sự kiện từ tất cả module nội bộ (Event Consumer Only) và phân phối thông báo đến đúng người nhận qua đúng kênh: In-App WebSocket (Sales Portal), Email (AWS SES), và Zalo OA ZNS (Khách hàng). Module không bao giờ truy vấn DB của module khác — hoạt động hoàn toàn dựa trên payload event.
+* **3 tầng ưu tiên**: Tier 1 CRITICAL (In-App trực tiếp < 500ms), Tier 2 TRANSACTIONAL (BullMQ jobs), Tier 3 SCHEDULED (BullMQ delayed jobs).
+* **Database sở hữu**: `notification_preferences`, `notification_templates`, `notification_logs`.
+
 ---
 
 ## 4. Tối Ưu Hiệu Năng AI (Performance & Resource Management)
@@ -111,10 +146,25 @@ graph TD
   - Phân loại `model_tier` tự động bằng Heuristics: Tên chứa `mini`, `flash`, `haiku`, `lite`... -> `SMALL` (mức phí rẻ, tốc độ nhanh); ngược lại -> `LARGE` (thông minh, xử lý ReAct).
 
 ### 4.2. Prompt Caching Thích Ứng Theo Hãng LLM (Prompt Caching Adaptation)
-Hệ thống thiết lập chiến lược Prompt Caching khác nhau cho từng adapter để giảm chi phí đầu vào lên đến 80-90%:
-* **Anthropic Adapter**: Bật header `anthropic-beta: prompt-caching-2024-07-31` và gán thuộc tính `"cache_control": {"type": "ephemeral"}` cho System Prompt tĩnh và định nghĩa Tools tĩnh khi độ dài vượt ngưỡng 1024 tokens.
-* **OpenAI Adapter**: Sắp xếp System Prompt và định nghĩa Tools tĩnh lên đầu mảng `messages` để tự động kích hoạt Zero-code Prefix Caching của OpenAI.
-* **Gemini Adapter**: Sử dụng Context Caching API `/v1beta/cachedContents` để tạo resource cache tĩnh cho các tài liệu Solar dung lượng lớn (trên 32,768 tokens) rồi đính kèm `cachedContent` ID vào cuộc gọi.
+Hệ thống thiết lập chiến lược Prompt Caching khác nhau cho từng adapter tương ứng với 17 providers, chia làm 4 nhóm cơ chế xử lý chính để giảm chi phí đầu vào lên đến 80-90%:
+* **Nhóm 1: Cache Tiền Tố Tự Động (Automatic Prefix Caching - APC)**
+  - *Áp dụng:* `openai`, `deepseek`, `groq`, `mistral`, `azure`, `xai` (Grok), `together_ai`, `qwen`, `replicate`.
+  - *Cơ chế:* Tự động cache KV tensors của tiền tố tĩnh trùng khớp hoàn toàn.
+  - *Tối ưu:* Sắp xếp System Prompt và Tools tĩnh lên đầu mảng `messages`, không chèn các biến động (thời gian, RAG, history) trước phần tĩnh, phần tĩnh đạt tối thiểu 1024 tokens.
+* **Nhóm 2: Khai Báo Cache Tường Minh (Explicit Caching Flags)**
+  - *Áp dụng:* `anthropic` (Claude), `openrouter` (khi định tuyến qua Anthropic), `bedrock` (Amazon Bedrock Converse API).
+  - *Cơ chế:* Gửi cờ cache và headers đặc thù.
+  - *Tối ưu:* 
+    - Với `anthropic`/`openrouter`: Thêm header `anthropic-beta: prompt-caching-2024-07-31` và cờ `"cache_control": {"type": "ephemeral"}` ở system prompt và tool block cuối cùng.
+    - Với `bedrock`: Đính kèm block `"cachePoint": {"type": "default"}` vào Converse API params cho system prompt và tools config.
+* **Nhóm 3: Tạo Tài Nguyên Cache Độc Lập (Context Caching API)**
+  - *Áp dụng:* `google` (Gemini API), `vertex_ai` (Google Cloud Vertex AI).
+  - *Cơ chế:* Tạo cache resource độc lập cho ngữ cảnh tĩnh siêu lớn.
+  - *Tối ưu:* Khi ngữ cảnh vượt quá 32,768 tokens, backend gọi API `/v1beta/cachedContents` để tạo cache tĩnh trước rồi truyền ID `cachedContent` vào request body.
+* **Nhóm 4: Cấu Hình Tối Ưu Hóa Khác (Custom Optimizations)**
+  - *Áp dụng:* `cohere`, `perplexity`, `voyage`.
+  - *Cơ chế:* Tối ưu hóa truy vấn/cache local.
+  - *Tối ưu:* Cohere tự động tối ưu hóa RAG cục bộ; Perplexity khống chế chặt chẽ token đầu vào; Voyage caching local cho embeddings trong Database.
 
 ### 4.3. Streaming Response (SSE)
 * Quá trình suy nghĩ (Thought) của ReAct Agent được thực thi ngầm. Tuy nhiên, sau khi ra được kết quả cuối cùng, dữ liệu phải được trả về Client (Zalo/Facebook/Web) thông qua **Server-Sent Events (SSE) Streaming**. Khách hàng sẽ thấy tin nhắn gõ ra từng chữ ngay lập tức thay vì phải chờ AI gen xong cả đoạn văn.
@@ -132,6 +182,15 @@ Hệ thống thiết lập chiến lược Prompt Caching khác nhau cho từng 
 * **Xếp Hàng Tin Nhắn (Queuing)**: Nếu có tin nhắn mới đến trong lúc khóa đang giữ, tin nhắn sẽ được đẩy vào Redis List `queue:conversation:<id>`.
 * **Tự động tiêu thụ**: Khi Agent hoàn thành lượt xử lý hiện tại, hệ thống sẽ tự động `RPOP` tin nhắn từ hàng đợi ra để xử lý tiếp theo thứ tự thời gian. Nếu hàng đợi vượt quá 2 tin nhắn, hệ thống sẽ từ chối để tránh spam tài nguyên LLM.
 
+### 4.6. Phân Phối Lưu Trữ & API Providers
+Để quản lý danh sách LLM Providers một cách hiệu quả và an toàn, hệ thống phân tách thành hai tầng quản lý rõ rệt:
+* **Tầng Supported Providers (Tĩnh)**:
+  - *Lưu trữ:* Định nghĩa tĩnh trong Codebase dưới dạng một TypeScript Enum hoặc Constant.
+  - *Mục đích:* Chỉ liệt kê các hãng LLM mà hệ thống đã xây dựng sẵn Adapter tích hợp và tối ưu Prompt Caching tương ứng. Tránh việc tự ý cấu hình các hãng chưa được lập trình, giảm tải truy vấn DB và tăng hiệu năng phản hồi (`GET /api/v1/gateway/providers/supported` trả về dữ liệu tĩnh trực tiếp từ memory với độ trễ ~0ms).
+* **Tầng Configured Providers (Động)**:
+  - *Lưu trữ:* Lưu trữ động trong bảng `gw_llm_providers` (PostgreSQL) chứa các API key (được mã hóa AES-256-GCM), URL cơ sở `api_base`, độ ưu tiên `priority`, và trạng thái hoạt động `status`.
+  - *Mục đích:* Cho phép Admin cập nhật credentials tại runtime mà không cần restart backend. Đồng thời cho phép thay đổi trạng thái động (`status = 'OUT_OF_CREDIT'` hoặc cooldown 15 phút) khi gặp lỗi cạn ví hoặc sự cố mạng.
+  - *Bảo mật & Hiệu năng:* API `GET /api/v1/gateway/providers/configured` được che giấu (mask) API key nhạy cảm và được cache vào Redis (`REDIS_CACHE_URL`) với TTL **5 phút** để bảo vệ hiệu năng định tuyến. Cache sẽ tự động bị invalidated khi có thay đổi cấu hình hoặc kích hoạt failover.
 
 ---
 
@@ -155,7 +214,7 @@ graph LR
     end
 ```
 
-### 4.1. Định Dạng Log Chuẩn Hóa (Structured Logging)
+### 5.1. Định Dạng Log Chuẩn Hóa (Structured Logging)
 Tất cả các module trong ứng dụng bắt buộc phải ghi log ra console (stdout/stderr) dưới dạng một dòng **JSON duy nhất** (Structured Log) thay vì dạng text thô. Cấu trúc log chuẩn:
 ```json
 {
@@ -173,7 +232,7 @@ Tất cả các module trong ứng dụng bắt buộc phải ghi log ra console
 }
 ```
 
-### 4.2. Cấu Hình Thu Thập Của Promtail (`promtail-config.yml`)
+### 5.2. Cấu Hình Thu Thập Của Promtail (`promtail-config.yml`)
 Promtail chạy dưới dạng một container độc lập, tự động đọc luồng log từ Docker và thực hiện parse JSON để trích xuất các label đánh chỉ mục cho Loki:
 * **Labels được trích xuất**: `app_name`, `level`, `module`, `context`.
 * Cấu hình pipeline chính:
@@ -192,6 +251,90 @@ pipeline_stages:
       context:
 ```
 
-### 4.3. Giám Sát Và Cảnh Báo Trên Grafana
+### 5.3. Giám Sát Và Cảnh Báo Trên Grafana
 * Nhân viên vận hành sử dụng Grafana để xem Log thời gian thực của từng module qua LogQL: `{app="solavie-backend", module="AI_Core", level="error"}`.
 * Thiết lập các Rule cảnh báo (Alert rules) tự động gửi tin nhắn Telegram/Discord nếu phát hiện lỗi hệ thống (`level="error"`) xảy ra quá 5 lần trong vòng 1 phút.
+
+---
+
+## 6. Kiến Trúc Tối Ưu Prompt Nâng Cao
+
+Để tối ưu hóa chi phí token, giảm độ trễ (latency), và hỗ trợ phản hồi đa ngôn ngữ linh động theo khách hàng, Solavie áp dụng hệ thống tối ưu hóa prompt nâng cao tích hợp:
+
+### 6.1. Hybrid Prompting & Language Caching
+Hệ thống chia prompt làm 2 phần chính dựa trên cơ chế Prompt Caching của các API Providers:
+*   **System Core Prompt & Tool Schemas (100% Tiếng Anh):** Quy định các luật ReAct Agent, hướng dẫn an toàn, định nghĩa tool schemas. Phần này chiếm ~85% dung lượng prompt và được đặt ở đầu tiên để được **Prompt Caching** vĩnh viễn, giảm tới 80% chi phí token đầu vào. Việc viết bằng tiếng Anh giúp tối ưu hóa tokenizer (ít token hơn tiếng Việt gấp 3 lần) và cải thiện độ chính xác khi Agent gọi tool.
+*   **Dynamic Variables & Context (Đa Ngôn Ngữ):** Bao gồm lịch sử hội thoại, RAG context, và các biến cấu hình của Admin (hotline, khuyến mãi). Các biến động được bọc trong chỉ thị tiếng Anh và được ghép nối vào **sau điểm ngắt cache (Cache Breakpoint)**.
+
+### 6.2. Dynamic Multilingual Response Router (Thích Ứng Ngôn Ngữ Động)
+Để hỗ trợ tư vấn đa ngôn ngữ tự động cho khách hàng Việt Nam và người nước ngoài:
+1.  **Nhận Diện Ngôn Ngữ Tự Động (Offline):**
+    *   Gateway sử dụng thư viện offline siêu nhẹ (`languagedetect` hoặc `franc` - thời gian xử lý ~0.5ms trên Node.js, tiêu thụ 0 token API) để xác định mã ISO ngôn ngữ khách hàng (`vi`, `en`, `zh`...) dựa trên tin nhắn đầu vào.
+2.  **Định Tuyến & Phản Hồi:**
+    *   **Đối với tin nhắn tĩnh hệ thống (Handover, OOD, Error):** Bỏ qua hoàn toàn LLM, backend NestJS truy vấn trực tiếp file JSON i18n (`vi.json`, `en.json`...) để trả phản hồi bản địa hóa ngay lập tức. Tiết kiệm 100% chi phí token và giảm latency xuống ~0ms.
+    *   **Đối với tin nhắn AI Chatbot:** Tận dụng mô hình nhúng đa ngôn ngữ (Multilingual Embeddings) để truy vấn tài liệu RAG. Đồng thời, backend chèn một chỉ thị ngôn ngữ ngắn ở cuối prompt sau điểm ngắt cache:
+        `Respond to the user in the detected language (ISO: ${user_lang}). Translate the retrieved context chunks if necessary.`
+        Mô hình LLM sẽ tự động dịch tài liệu RAG tiếng Việt sang ngôn ngữ của khách hàng khi tạo ra câu trả lời cuối cùng (`Final Answer`).
+
+### 6.3. Tích Hợp LLMLingua-2 Microservice (Nén Prompt Động)
+Khi lịch sử hội thoại dài và context RAG nhiều tài liệu khiến tổng tokens của prompt vượt quá **3,000 tokens**, backend NestJS sẽ gọi một microservice chạy **LLMLingua-2** để nén prompt động:
+
+```mermaid
+sequenceDiagram
+    participant C as NestJS Chatbot
+    participant L as LLMLingua-2 Microservice
+    participant G as LLM Gateway (LiteLLM)
+    
+    C->>C: Kiểm tra prompt > 3000 tokens?
+    alt Có
+        C->>L: POST /v1/compress (Payload: RAG context & History)
+        Note over L: Chạy LLMLingua-2 (Nén RAG x0.4, History x0.6)
+        L-->>C: Trả về Context & History đã nén
+        C->>C: Ghép nối System Prompt tĩnh + Content đã nén
+    end
+    C->>G: Gửi Request suy luận LLM
+    G-->>C: Trả về kết quả
+```
+
+### 6.4. Kiến Trúc Evals Engine (LLM-as-a-Judge)
+Xây dựng hệ thống tự động kiểm soát chất lượng prompt ngoại tuyến (offline evaluation) sử dụng mô hình lớn làm Judge:
+*   Mô hình Judge được định tuyến động thông qua LLM Gateway dưới khóa kịch bản `EVALS_JUDGE` (thường trỏ tới `gpt-4o` hoặc `claude-3-5-sonnet` để đảm bảo độ chính xác logic cao nhất).
+*   **Quy trình đánh giá:**
+    1.  Evals Engine đọc tập câu hỏi mẫu từ bảng `chat_eval_datasets` (Golden Dataset).
+    2.  Chạy thử qua Chatbot để lấy câu trả lời thực tế (`actual_output`).
+    3.  Gửi câu hỏi, context, câu trả lời mẫu chuẩn (ground-truth) và câu trả lời thực tế lên LLM Judge.
+    4.  LLM Judge thực hiện chấm điểm dựa trên 2 tiêu chí chính:
+        *   **Grounding Score (1-5):** Đánh giá tính trung thực chống ảo giác (faithfulness) so với RAG context.
+        *   **Relevance Score (1-5):** Đánh giá mức độ trả lời đúng trọng tâm câu hỏi.
+    5.  Lưu trữ kết quả chi tiết và feedback của Judge vào bảng `chat_eval_results` để theo dõi chất lượng prompt qua các phiên bản.
+
+---
+
+## 7. Cơ Chế Xác Thực & Quản Lý Phiên Đăng Nhập (Authentication & Session Management)
+
+Hệ thống Solavie áp dụng mô hình xác thực phân lớp kết hợp **Access Token** ngắn hạn và **Refresh Token** dài hạn, tuân thủ các quy tắc bảo mật cao nhất của tiêu chuẩn an toàn OWASP:
+
+### 7.1. Nguyên Tắc Phân Loại & Lưu Trữ Token
+*   **Access Token (JWT - JSON Web Token):**
+    *   *Ký thuật toán:* `HS256`, thời hạn hết hạn **15 phút**.
+    *   *Nơi lưu trữ ở Client:* Lưu trực tiếp trong **Memory (State/Variable)** của ứng dụng React Frontend. Tuyệt đối không lưu vào `localStorage` hay `sessionStorage` để triệt tiêu lỗ hổng đánh cắp token qua XSS.
+    *   *Payload:* Chứa `userId`, `email`, và mảng danh sách `permissions` tĩnh của nhân viên. API Gateway/Guard sử dụng payload này để check quyền truy cập trong thời gian < 1ms mà không cần query DB PostgreSQL.
+*   **Refresh Token (Secure Random Token):**
+    *   *Cấu trúc:* Chuỗi ngẫu nhiên bảo mật dài 32 bytes (sinh bởi `crypto.randomBytes`).
+    *   *Nơi lưu trữ ở Client:* Trả về thông qua **HTTP-Only, Secure, SameSite=Strict Cookie** với tên `refresh_token`. JavaScript phía Client không thể đọc cookie này, ngăn chặn hoàn toàn nguy cơ bị XSS thu thập.
+    *   *Nơi lưu trữ ở Backend:* Lưu trữ trong **Redis Cache** (Port `6379`) dưới định dạng key: `iam:refresh_token:${refreshToken}` với thời gian sống **TTL = 7 ngày**. Giá trị lưu trữ gồm: `{ userId, ipAddress, userAgent, expiresAt }`.
+
+### 7.2. Cơ Chế Quay Vòng Token (Refresh Token Rotation)
+Để chống lại hình thức tấn công phát lại (Replay Attacks) khi token bị nghe lén hoặc rò rỉ:
+1.  Mỗi lần client gửi yêu cầu lấy Access Token mới qua API `/auth/refresh`, hệ thống sẽ kiểm tra tính hợp lệ của Refresh Token cũ trong Redis.
+2.  Nếu hợp lệ:
+    *   Hệ thống sinh một cặp Access Token mới và Refresh Token mới.
+    *   **Xóa ngay lập tức** Refresh Token cũ khỏi Redis.
+    *   Đặt lại cookie `refresh_token` mới và trả về Access Token mới cho client.
+3.  **Phòng chống gian lận (Breach Detection):** Nếu hệ thống nhận được yêu cầu sử dụng một Refresh Token cũ đã bị xóa (do hacker phát lại), backend lập tức coi đây là dấu hiệu xâm nhập an ninh $\rightarrow$ Hủy bỏ toàn bộ tất cả Refresh Tokens đang hoạt động của người dùng đó trên toàn hệ thống để ép buộc đăng xuất trên mọi thiết bị.
+
+### 7.3. Cơ Chế Đăng Xuất & Hủy Phiên Đồng Thời (Global Sign-out)
+*   Khi người dùng gọi API `/auth/logout` hoặc thực hiện **Đổi mật khẩu thành công**, backend sẽ thực hiện:
+    1.  Xóa bản ghi Refresh Token hiện tại (hoặc tất cả bản ghi đối với đổi mật khẩu) khỏi Redis.
+    2.  Xóa key Redis lưu cache phân quyền của user: `user:permissions:${userId}`.
+    3.  Thiết lập cookie `refresh_token` hết hạn ngay lập tức trên trình duyệt.

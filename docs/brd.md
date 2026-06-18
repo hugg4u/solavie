@@ -123,3 +123,15 @@ Các Adapter kết nối API sẽ không được khởi tạo sẵn khi ứng d
 * **Bộ tính toán ROI tự động**: Tích hợp công cụ tính sản lượng điện ước tính và ROI dựa trên địa phương (giờ nắng trung bình tại Việt Nam) và dữ liệu mái nhà.
 * **Thông báo thời gian thực (Real-time Notification)**: Ngay khi AI thu thập đủ thông tin nhu cầu và tự tạo Lead trên CRM, hệ thống chỉ lưu thông tin Lead và kết quả ROI ước tính trong DB, đồng thời gửi thông báo tức thời cho nhân viên Sales qua Web Dashboard để họ chủ động gọi điện tư vấn trực tiếp (không tự động gửi báo giá thô qua chat).
 * **Giao diện cấu hình AI**: Chọn Provider, Model (đồng bộ từ danh sách LiteLLM) và cấu hình Prompt cho chatbot.
+
+---
+
+## 5. Các Tiêu Chuẩn Tối Ưu Hóa & Bảo Mật Kiến Trúc (Architectural Optimizations & Hardening)
+
+Để đáp ứng tiêu chuẩn vận hành Enterprise ổn định và bảo mật cao, hệ thống áp dụng 5 giải pháp kiến trúc nâng cao:
+1. **Transactional Outbox Pattern (Gateway):** Lưu tạm tin nhắn thô vào DB trước khi đẩy vào BullMQ để đảm bảo tin nhắn không bao giờ bị mất nếu hàng đợi/Redis bị sập.
+2. **Distributed Redis Lock (CRM):** Khóa phân tán dựa trên số điện thoại khi thực hiện gộp trùng hồ sơ (Merge Profile) để triệt tiêu race condition từ webhook song song.
+3. **Storage Garbage Collector (Storage):** Cron job quét dọn file rác (chưa confirm sau 24 giờ) để tối ưu bộ nhớ lưu trữ vật lý của MinIO.
+4. **Mã hóa AES-256-GCM (Security):** Mã hóa đối xứng toàn bộ API Keys và Channel Access Tokens nhạy cảm dưới DB, bảo vệ an toàn thông tin hệ thống.
+5. **IAM Cache Invalidation (IAM):** Tự động xóa Redis cache phân quyền của user ngay khi Admin thay đổi Role/Permission để quyền hạn mới có hiệu lực ngay lập tức.
+

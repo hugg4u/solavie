@@ -36,6 +36,15 @@ erDiagram
         jsonb new_state
         timestamp created_at
     }
+    iam_outbox_events {
+        uuid id PK
+        string event_type
+        jsonb payload
+        string status
+        integer retry_count
+        timestamp created_at
+        timestamp updated_at
+    }
 
     %% Chatbot Module
     chat_conversations ||--o{ chat_messages : contains
@@ -45,6 +54,7 @@ erDiagram
         string sender_id
         string state
         uuid assignee_id
+        uuid customer_id FK
         timestamp created_at
     }
     chat_messages {
@@ -62,6 +72,15 @@ erDiagram
         text content_chunk
         vector embedding
         timestamp created_at
+    }
+    chat_outbox_events {
+        uuid id PK
+        string event_type
+        jsonb payload
+        string status
+        integer retry_count
+        timestamp created_at
+        timestamp updated_at
     }
 
     %% CRM Module (Đã gộp bảng & Bổ sung Cấu hình Động)
@@ -117,6 +136,90 @@ erDiagram
         jsonb payload
         timestamp created_at
     }
+    crm_customer_notes {
+        uuid id PK
+        uuid customer_id FK
+        uuid created_by FK
+        text content
+        boolean is_pinned
+        timestamp created_at
+        timestamp updated_at
+    }
+    crm_audit_logs {
+        uuid id PK
+        string table_name
+        uuid record_id
+        string action
+        jsonb old_values
+        jsonb new_values
+        uuid actor_id
+        uuid trace_id
+        timestamp created_at
+    }
+    crm_outbox_events {
+        uuid id PK
+        string event_type
+        jsonb payload
+        string status
+        integer retry_count
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% Booking Module
+    booking_calendar_credentials {
+        uuid id PK
+        uuid user_id FK
+        text refresh_token
+        string sync_token
+        string channel_id
+        timestamp channel_expiration
+        string status
+        timestamp created_at
+    }
+    booking_event_types {
+        uuid id PK
+        string title
+        string slug UK
+        integer duration
+        string location_type
+        text description
+        boolean is_active
+        timestamp created_at
+    }
+    booking_availabilities {
+        uuid id PK
+        uuid user_id FK
+        integer day_of_week
+        time start_time
+        time end_time
+    }
+    booking_appointments {
+        uuid id PK
+        uuid event_type_id FK
+        uuid host_id FK
+        uuid customer_id FK
+        string customer_name
+        string customer_email
+        string customer_phone
+        timestamp start_time
+        timestamp end_time
+        string status
+        string meeting_link
+        text notes
+        timestamp created_at
+        timestamp updated_at
+    }
+    booking_outbox_events {
+        uuid id PK
+        string event_type
+        jsonb payload
+        string status
+        integer retry_count
+        timestamp created_at
+        timestamp updated_at
+    }
+
 
     %% Gateway Module
     gw_llm_providers ||--o{ gw_llm_provider_models : has
@@ -125,7 +228,18 @@ erDiagram
     gw_channel_configurations {
         uuid id PK
         string channel_type
-        jsonb credentials
+        text credentials
+        string encryption_iv
+        string encryption_tag
+        timestamp updated_at
+    }
+    gw_incoming_events {
+        uuid id PK
+        string channel
+        jsonb payload
+        string status
+        integer retry_count
+        timestamp created_at
         timestamp updated_at
     }
     gw_llm_providers {
@@ -187,6 +301,63 @@ erDiagram
         boolean is_confirmed
         timestamp created_at
     }
+
+    gw_prompt_variables {
+        uuid id PK
+        string variable_key UK
+        text variable_value
+        string description
+        timestamp created_at
+        timestamp updated_at
+        uuid updater_id
+    }
+
+    chat_eval_datasets {
+        uuid id PK
+        text query
+        text expected_context
+        text expected_output
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    chat_eval_results {
+        uuid id PK
+        uuid eval_run_id
+        uuid dataset_id FK
+        text actual_output
+        numeric grounding_score
+        numeric relevance_score
+        text evaluator_feedback
+        integer latency_ms
+        timestamp created_at
+    }
+
+    inbox_quick_replies {
+        uuid id PK
+        string shortcut UK
+        text content
+        timestamp created_at
+    }
+
+    inbox_internal_comments {
+        uuid id PK
+        uuid conversation_id FK
+        uuid sender_id FK
+        text content
+        timestamp created_at
+    }
+
+    iam_users ||--o{ gw_prompt_variables : updates
+    chat_eval_datasets ||--o{ chat_eval_results : evaluated
+    chat_conversations ||--o{ inbox_internal_comments : has
+    iam_users ||--o{ inbox_internal_comments : writes
+    crm_customers ||--o{ crm_customer_notes : has
+    iam_users ||--o{ crm_customer_notes : writes
+    booking_event_types ||--o{ booking_appointments : defines
+    crm_customers ||--o{ booking_appointments : books
+    iam_users ||--o{ booking_appointments : hosts
+    iam_users ||--o{ booking_availabilities : defines
 ```
 
 ---
@@ -200,6 +371,7 @@ erDiagram
 | `email` | VARCHAR(255) | UNIQUE, NOT NULL | Email đăng nhập |
 | `password_hash` | VARCHAR(255) | NOT NULL | Mật khẩu băm |
 | `full_name` | VARCHAR(255) | NOT NULL | Tên nhân viên |
+| `avatar_url` | VARCHAR(550) | NULLABLE | Đường dẫn ảnh đại diện (được lưu tại bucket public user-media) |
 | `is_active` | BOOLEAN | Default TRUE | Trạng thái tài khoản |
 | `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
 
@@ -235,6 +407,17 @@ erDiagram
 | `new_state` | JSONB | | Trạng thái mới sau khi thay đổi |
 | `created_at` | TIMESTAMP | Default NOW() | Thời gian thay đổi |
 
+#### Bảng `iam_outbox_events` (Đệm sự kiện Outbox Pattern)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh sự kiện |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (`auth.user_created`, `permission.changed`...) |
+| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện sẽ publish |
+| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
+| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào Redis/BullMQ |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm sinh sự kiện |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật trạng thái |
+
 ---
 
 ### 2.2. Module Chatbot (Chatbot Orchestrator)
@@ -247,6 +430,7 @@ erDiagram
 | `sender_id` | VARCHAR(255) | NOT NULL | ID người gửi trên MXH (PSID, Zalo User ID) |
 | `state` | VARCHAR(50) | Default 'AUTOMATIC' | Trạng thái chat (`AUTOMATIC` / `MANUAL`) |
 | `assignee_id` | UUID | NULLABLE | Nhân viên tiếp quản (Soft link `iam_users.id`) |
+| `customer_id` | UUID | NULLABLE | Khách hàng sở hữu cuộc hội thoại (Soft link `crm_customers.id`) |
 | `last_message_at` | TIMESTAMP | NULLABLE | Thời điểm tin nhắn cuối cùng được gửi (bất kỳ ai gửi) |
 | `last_customer_message_at` | TIMESTAMP | NULLABLE | Thời điểm tin nhắn cuối cùng của khách hàng |
 | `followup_status` | VARCHAR(20) | Default 'PENDING' | Trạng thái nhắc nhở (`PENDING`, `SENT`, `SKIPPED`) |
@@ -277,6 +461,40 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 *Đánh chỉ mục (Index) trên bảng:*
 - Cột `embedding` đánh index loại `HNSW` với hàm khoảng cách `cosine` (chỉ trên bản ghi `CHILD` chunk).
 - Cột `tsv_content` đánh index loại `GIN` để hỗ trợ Full-Text Search siêu tốc.
+
+#### Bảng `chat_eval_datasets` (Tập câu hỏi và câu trả lời mẫu chuẩn)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh test case |
+| `query` | TEXT | NOT NULL | Câu hỏi của khách hàng giả định |
+| `expected_context`| TEXT | | Đoạn tài liệu RAG chuẩn tương ứng |
+| `expected_output` | TEXT | NOT NULL | Câu trả lời mẫu kỳ vọng (Ground-truth) |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật |
+
+#### Bảng `chat_eval_results` (Nhật ký kết quả chạy Evals)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh kết quả |
+| `eval_run_id` | UUID | NOT NULL | Mã định danh lượt chạy (Group Run UUID) |
+| `dataset_id` | UUID | NOT NULL, Soft link `chat_eval_datasets.id` | Trỏ về test case nào |
+| `actual_output` | TEXT | NOT NULL | Câu trả lời thực tế sinh ra bởi chatbot |
+| `grounding_score` | NUMERIC(3,2)| NOT NULL | Điểm trung thực chống ảo giác (1.00 - 5.00) |
+| `relevance_score` | NUMERIC(3,2)| NOT NULL | Điểm liên quan câu hỏi (1.00 - 5.00) |
+| `evaluator_feedback`| TEXT | | Nhận xét chi tiết từ LLM Judge |
+| `latency_ms` | INTEGER | NOT NULL | Thời gian phản hồi |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm ghi nhận kết quả |
+
+#### Bảng `chat_outbox_events` (Đệm sự kiện Outbox Pattern)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh sự kiện |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (`lead.extracted`, `chat.handover_requested`...) |
+| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện sẽ publish |
+| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
+| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào Event Bus |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm sinh sự kiện |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật trạng thái |
 
 ---
 
@@ -342,6 +560,41 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 | `payload` | JSONB | | Chi tiết sự kiện lưu dạng JSON |
 | `created_at` | TIMESTAMP | Default NOW() | Thời gian thực hiện |
 
+#### Bảng `crm_audit_logs` (Nhật ký thay đổi & hoàn tác - CRM Undo Log)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh log |
+| `table_name` | VARCHAR(100) | NOT NULL | Tên bảng bị thay đổi (VD: `crm_customers`) |
+| `record_id` | UUID | NOT NULL | ID bản ghi bị thay đổi |
+| `action` | VARCHAR(20) | NOT NULL | Hành động (`INSERT`, `UPDATE`, `DELETE`, `UNDO`) |
+| `old_values` | JSONB | | Snapshot dữ liệu cũ (khi UPDATE hoặc DELETE) |
+| `new_values` | JSONB | | Snapshot dữ liệu mới (khi INSERT hoặc UPDATE) |
+| `actor_id` | UUID | | Người thực hiện hành động (Soft link `iam_users.id`) |
+| `trace_id` | UUID | | Trace ID để theo dấu logs Loki |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo bản ghi |
+
+#### Bảng `crm_customer_notes` (Ghi chú chi tiết về khách hàng)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh duy nhất ghi chú |
+| `customer_id` | UUID | FOREIGN KEY (crm_customers.id) | Khách hàng được ghi chú (Soft link) |
+| `created_by` | UUID | FOREIGN KEY (iam_users.id) | Sales Rep viết ghi chú (Soft link) |
+| `content` | TEXT | NOT NULL | Nội dung ghi chú viết tay |
+| `is_pinned` | BOOLEAN | Default FALSE | Trạng thái ghim lên đầu |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật gần nhất |
+
+#### Bảng `crm_outbox_events` (Đệm sự kiện Outbox Pattern)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh sự kiện |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (`lead.assigned`, `lead.score_hot`...) |
+| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện sẽ publish |
+| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
+| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào Event Bus |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm sinh sự kiện |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật trạng thái |
+
 ---
 
 ### 2.4. Module Gateway & Cấu Hình
@@ -351,7 +604,9 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 | --- | --- | --- | --- |
 | `id` | UUID | PRIMARY KEY | Định danh cấu hình |
 | `channel_type` | VARCHAR(50) | UNIQUE, NOT NULL | Kênh (`FACEBOOK`, `ZALO`) |
-| `credentials` | JSONB | NOT NULL | Tokens, AppSecret, Webhook verification tokens |
+| `credentials` | TEXT | NOT NULL | JSON credentials nhạy cảm đã được mã hóa AES-256-GCM |
+| `encryption_iv` | VARCHAR(50) | | Vector khởi tạo (Initialization Vector) dùng để giải mã |
+| `encryption_tag`| VARCHAR(50) | | Thẻ xác thực (Auth Tag) bảo vệ toàn vẹn |
 | `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật |
 
 #### Bảng `gw_llm_providers` (Danh sách API Keys của hãng LLM)
@@ -410,6 +665,28 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 | `latency_ms` | INTEGER | | Thời gian xử lý API (Mili giây) |
 | `created_at` | TIMESTAMP | Default NOW() | Thời điểm thực hiện cuộc gọi |
 
+#### Bảng `gw_incoming_events` (Đệm Outbox Webhook - Gateway Outbox)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh sự kiện |
+| `channel` | VARCHAR(50) | NOT NULL | Kênh nhận (`FACEBOOK`, `ZALO`) |
+| `payload` | JSONB | NOT NULL | Webhook payload thô nhận từ đối tác |
+| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
+| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào hàng đợi |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm nhận webhook |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật gần nhất |
+
+#### Bảng `gw_prompt_variables` (Quản lý biến prompt động của Admin)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh biến |
+| `variable_key` | VARCHAR(50) | UNIQUE, NOT NULL | Khóa kỹ thuật (VD: `promo_info`, `hotline_number`) |
+| `variable_value` | TEXT | NOT NULL | Nội dung cấu hình thực tế |
+| `description` | TEXT | | Mô tả công dụng của biến |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật |
+| `updater_id` | UUID | NULLABLE | Người cập nhật gần nhất (Soft link `iam_users.id`) |
+
 ---
 
 ### 2.5. Module Storage (MinIO)
@@ -426,3 +703,142 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 | `uploader_id` | UUID | NULLABLE | ID người upload (Soft link `iam_users.id` hoặc NULL nếu là khách hàng) |
 | `is_confirmed`| BOOLEAN | Default FALSE | Cờ xác nhận file đã upload xong và được gán vào 1 resource |
 | `created_at` | TIMESTAMP | Default NOW() | Thời gian khởi tạo yêu cầu upload |
+
+---
+
+### 2.6. Module Agent Inbox (Sales Chat Portal)
+
+#### Bảng `inbox_quick_replies` (Mẫu câu trả lời nhanh)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh duy nhất |
+| `shortcut` | VARCHAR(50) | UNIQUE, NOT NULL | Phím tắt kích hoạt nhanh (Ví dụ: `baogia`, `inverter`) |
+| `content` | TEXT | NOT NULL | Nội dung mẫu tin nhắn trả lời |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+
+#### Bảng `inbox_internal_comments` (Thảo luận nội bộ)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh duy nhất |
+| `conversation_id`| UUID | FOREIGN KEY (chat_conversations.id) | Thuộc phiên hội thoại nào (Soft link) |
+| `sender_id` | UUID | FOREIGN KEY (iam_users.id) | Sales Rep viết ghi chú (Soft link) |
+| `content` | TEXT | NOT NULL | Nội dung trao đổi nội bộ (Hỗ trợ tag `@tên`) |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian ghi chú |
+
+---
+
+### 2.7. Module Booking (Đặt Lịch Hẹn)
+
+#### Bảng `booking_event_types` (Loại lịch hẹn mẫu)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh loại lịch hẹn |
+| `title` | VARCHAR(100) | NOT NULL | Tiêu đề lịch (Ví dụ: "Tư vấn Solar Online", "Khảo sát thực địa") |
+| `slug` | VARCHAR(100) | UNIQUE, NOT NULL | Slug định tuyến (Ví dụ: `tu-van-online`, `khao-sat-thuc-dia`) |
+| `duration` | INTEGER | NOT NULL | Thời lượng sự kiện (tính bằng phút) |
+| `location_type` | VARCHAR(50) | NOT NULL | Loại địa điểm (`ONLINE_MEETING`, `ONSITE_CUSTOMER`, `OFFICE`...) |
+| `description` | TEXT | | Mô tả chi tiết cho khách hàng |
+| `is_active` | BOOLEAN | Default TRUE | Trạng thái kích hoạt |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+
+#### Bảng `booking_availabilities` (Cấu hình lịch rảnh của nhân viên Sales)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh cấu hình lịch rảnh |
+| `user_id` | UUID | NOT NULL | ID nhân viên Sales (Soft link `iam_users.id`) |
+| `day_of_week` | INTEGER | NOT NULL | Ngày trong tuần (0: Chủ Nhật, 1: Thứ Hai, ..., 6: Thứ Bảy) |
+| `start_time` | TIME | NOT NULL | Giờ bắt đầu rảnh (Ví dụ: 08:00:00) |
+| `end_time` | TIME | NOT NULL | Giờ kết thúc rảnh (Ví dụ: 12:00:00) |
+
+#### Bảng `booking_appointments` (Lịch hẹn chi tiết)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh cuộc hẹn |
+| `event_type_id` | UUID | NOT NULL | ID loại cuộc hẹn mẫu (Soft link `booking_event_types.id`) |
+| `host_id` | UUID | NOT NULL | ID nhân viên Sales phụ trách chính (Soft link `iam_users.id`) |
+| `customer_id` | UUID | NOT NULL | ID khách hàng (Soft link `crm_customers.id`) |
+| `customer_name` | VARCHAR(255) | NOT NULL | Họ tên khách hàng lúc đặt (dùng để snapshot/hiển thị nhanh) |
+| `customer_email` | VARCHAR(255) | NOT NULL | Email khách hàng lúc đặt |
+| `customer_phone` | VARCHAR(50) | NOT NULL | Số điện thoại khách hàng lúc đặt |
+| `start_time` | TIMESTAMP | NOT NULL | Thời điểm bắt đầu lịch hẹn |
+| `end_time` | TIMESTAMP | NOT NULL | Thời điểm kết thúc lịch hẹn |
+| `status` | VARCHAR(30) | Default 'SCHEDULED' | Trạng thái lịch (`SCHEDULED`, `RESCHEDULED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`) |
+| `meeting_link` | VARCHAR(255) | | Link phòng họp trực tuyến (nếu là Google Meet/Zoom) |
+| `notes` | TEXT | | Ghi chú của khách hàng khi đặt lịch |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian đặt lịch |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật gần nhất |
+
+#### Bảng `booking_outbox_events` (Đệm sự kiện Outbox Pattern)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh sự kiện |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (`appointment.confirmed`, `appointment.cancelled`...) |
+| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện sẽ publish |
+| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
+| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào Event Bus |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm sinh sự kiện |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật trạng thái |
+
+#### Bảng `booking_calendar_credentials` (OAuth2 & Webhook Google Calendar)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh |
+| `user_id` | UUID | UNIQUE, NOT NULL | ID nhân viên Sales (Soft link `iam_users.id`) |
+| `refresh_token` | TEXT | NOT NULL | OAuth2 Refresh Token (Mã hóa AES-256) |
+| `sync_token` | VARCHAR(255) | | Token dùng cho Incremental Sync |
+| `channel_id` | VARCHAR(255) | | ID của Google Push Webhook Channel |
+| `channel_expiration`| TIMESTAMP | | Thời điểm Webhook hết hạn cần renew |
+| `status` | VARCHAR(30) | Default 'ACTIVE' | Trạng thái (`ACTIVE`, `REVOKED`) |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm cấp quyền |
+
+---
+
+## 9. Notification Module
+
+> **Nguyên tắc:** Module Notification sở hữu và quản lý toàn bộ 3 bảng dưới đây. Không có module nào khác được JOIN trực tiếp vào các bảng này. Giao tiếp chỉ qua Event Bus.
+
+#### Bảng `notification_preferences` (Tùy chọn thông báo của nhân viên)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh bản ghi |
+| `user_id` | UUID | NOT NULL UNIQUE | Soft link sang `iam_users.id` |
+| `email_enabled` | BOOLEAN | NOT NULL Default true | Bật/tắt nhận Email |
+| `in_app_enabled` | BOOLEAN | NOT NULL Default true | Bật/tắt nhận In-App |
+| `quiet_hours_start` | TIME | | Giờ bắt đầu không gửi Email (VD: 22:00) |
+| `quiet_hours_end` | TIME | | Giờ kết thúc không gửi Email (VD: 07:00) |
+| `event_overrides` | JSONB | NOT NULL Default '{}' | Ghi đè cấu hình theo từng loại sự kiện |
+| `created_at` | TIMESTAMPTZ | Default NOW() | Ngày tạo |
+| `updated_at` | TIMESTAMPTZ | Default NOW() | Ngày cập nhật |
+
+#### Bảng `notification_templates` (Mẫu nội dung thông báo)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh template |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (VD: `appointment.confirmed`) |
+| `channel` | VARCHAR(50) | NOT NULL | Kênh (`email` / `zalo` / `in_app`) |
+| `language` | VARCHAR(10) | NOT NULL Default 'vi' | Ngôn ngữ (`vi` / `en`) |
+| `subject` | TEXT | | Tiêu đề email (chỉ dùng cho kênh email) |
+| `body_template` | TEXT | NOT NULL | Nội dung Handlebars template |
+| `zalo_template_id` | VARCHAR(100) | | ZNS Template ID đã phê duyệt bởi Zalo |
+| `is_active` | BOOLEAN | NOT NULL Default true | Trạng thái hoạt động |
+| `created_at` | TIMESTAMPTZ | Default NOW() | Ngày tạo |
+| `updated_at` | TIMESTAMPTZ | Default NOW() | Ngày cập nhật |
+| **UNIQUE** | | `(event_type, channel, language)` | Khóa duy nhất theo bộ 3 điều kiện |
+
+#### Bảng `notification_logs` (Nhật ký gửi thông báo — Audit Trail)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY | Định danh bản ghi log |
+| `idempotency_key` | VARCHAR(255) | NOT NULL UNIQUE | SHA256 hash — chống gửi trùng |
+| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện kích hoạt |
+| `event_entity_id` | UUID | | ID entity gốc (appointment_id, lead_id...) |
+| `recipient_type` | VARCHAR(20) | NOT NULL | `staff` hoặc `customer` |
+| `recipient_id` | UUID | | user_id nếu là staff (Soft link `iam_users.id`) |
+| `recipient_contact` | VARCHAR(255) | | Email hoặc zalo_user_id của người nhận |
+| `channel` | VARCHAR(50) | NOT NULL | `email` / `zalo` / `in_app` |
+| `status` | VARCHAR(20) | NOT NULL Default 'QUEUED' | `QUEUED` / `PROCESSING` / `SENT` / `FAILED` / `SKIPPED` |
+| `skip_reason` | VARCHAR(100) | | Lý do bỏ qua (IDEMPOTENT / QUIET_HOURS / PREFERENCE_OPT_OUT / NO_CONTACT / APPOINTMENT_CANCELLED) |
+| `error_message` | TEXT | | Nội dung lỗi nếu thất bại |
+| `retry_count` | SMALLINT | NOT NULL Default 0 | Số lần đã thử lại |
+| `sent_at` | TIMESTAMPTZ | | Thời điểm gửi thành công |
+| `created_at` | TIMESTAMPTZ | Default NOW() | Thời điểm tạo log |
