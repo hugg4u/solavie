@@ -18,36 +18,73 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<FastifyReply>();
     const request = ctx.getRequest<FastifyRequest>();
 
-    let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let message: any = 'Internal server error';
+    let status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR;
+    let message: unknown = 'Internal server error';
+    let errorCode: string | null = null;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      message =
-        typeof exceptionResponse === 'string'
-          ? exceptionResponse
-          : (exceptionResponse as any).message || exceptionResponse;
+      if (typeof exceptionResponse === 'string') {
+        message = exceptionResponse;
+      } else if (
+        typeof exceptionResponse === 'object' &&
+        exceptionResponse !== null
+      ) {
+        const resObj = exceptionResponse as Record<string, unknown>;
+        message = resObj.message || exceptionResponse;
+        errorCode =
+          (resObj.errorCode as string) || (resObj.code as string) || null;
+      }
+
+      // Auto-mapping default status codes if no custom errorCode is provided
+      if (!errorCode) {
+        switch (status) {
+          case HttpStatus.BAD_REQUEST:
+            errorCode = 'validation.failed';
+            break;
+          case HttpStatus.UNAUTHORIZED:
+            errorCode = 'auth.unauthorized';
+            break;
+          case HttpStatus.FORBIDDEN:
+            errorCode = 'auth.forbidden';
+            break;
+          case HttpStatus.NOT_FOUND:
+            errorCode = 'resource.not_found';
+            break;
+          case HttpStatus.CONFLICT:
+            errorCode = 'resource.conflict';
+            break;
+          case HttpStatus.TOO_MANY_REQUESTS:
+            errorCode = 'rate_limit.exceeded';
+            break;
+          default:
+            errorCode = `http.error_${status}`;
+        }
+      }
     } else if (exception instanceof TypeORMError) {
       status = HttpStatus.UNPROCESSABLE_ENTITY;
-      message = exception.message;
-    } else if (exception instanceof Error) {
-      message = exception.message;
+      message = 'Database operation failed';
+      errorCode = 'database.error';
+    } else {
+      errorCode = 'server.internal_error';
     }
 
-    const traceId = (request as any).traceId || 'unknown';
+    const requestRecord = request as unknown as Record<string, unknown>;
+    const traceId = (requestRecord.traceId as string) || 'unknown';
+    const statusCode = Number(status);
 
     const errorResponse = {
-      statusCode: status,
+      statusCode,
       timestamp: new Date().toISOString(),
       path: request.url,
+      errorCode,
       message,
-      traceId,
     };
 
-    if (status >= 500) {
+    if (statusCode >= 500) {
       this.logger.error(
-        `[${traceId}] ${request.method} ${request.url} - ${message}`,
+        `[${traceId}] ${request.method} ${request.url} - ${exception instanceof Error ? exception.message : 'Unknown Error'}`,
         exception instanceof Error ? exception.stack : '',
       );
     } else {
@@ -56,6 +93,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
-    response.status(status).send(errorResponse);
+    response.status(statusCode).send(errorResponse);
   }
 }

@@ -1,36 +1,51 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-floating-promises */
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import helmet from '@fastify/helmet';
+import fastifyCookie from '@fastify/cookie';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({ trustProxy: true }),
     { bufferLogs: true },
   );
 
   // Use Winston Logger
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
 
+  // Global prefix
+  app.setGlobalPrefix('api');
+
+  // Versioning
+  app.enableVersioning({
+    type: VersioningType.URI,
+  });
+
   // Security headers
-  await app.register(helmet);
+  await app.register(helmet, {
+    referrerPolicy: { policy: 'same-origin' },
+  });
 
   // Cookie parser
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  await app.register(require('@fastify/cookie'), {
-    secret: process.env.COOKIE_SECRET || 'my-secret', // should be from config
+  const configService = app.get(ConfigService);
+  await app.register(fastifyCookie, {
+    secret: configService.get<string>('COOKIE_SECRET'),
   });
 
   // CORS
+  const corsOrigins =
+    configService.get<string>('CORS_ALLOWED_ORIGINS') ||
+    'http://localhost:5174,http://localhost:3000';
   app.enableCors({
-    origin: '*', // Tạm thời allow all trong dev
+    origin: corsOrigins.split(','),
+    credentials: true,
   });
 
   // Global validation
@@ -44,4 +59,7 @@ async function bootstrap() {
   await app.listen(3000, '0.0.0.0');
   console.log(`Application is running on: ${await app.getUrl()}`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Failed to start application:', err);
+  process.exit(1);
+});

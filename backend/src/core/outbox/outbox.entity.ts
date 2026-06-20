@@ -16,7 +16,10 @@ export abstract class BaseOutboxEntity {
   payload: Record<string, any>;
 
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
-  status: 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED';
+  status: 'PENDING' | 'PROCESSING' | 'PROCESSED' | 'FAILED' | 'DEAD_LETTER';
+
+  @Column({ type: 'integer', default: 0 })
+  attempts: number;
 
   @Column({ type: 'text', nullable: true })
   errorReason?: string;

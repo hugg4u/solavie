@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call */
 import {
   Injectable,
   NestInterceptor,
@@ -7,20 +6,30 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 @Injectable()
 export class TraceIdInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const response = context.switchToHttp().getResponse();
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const request = context
+      .switchToHttp()
+      .getRequest<FastifyRequest & { traceId?: string }>();
+    const response = context
+      .switchToHttp()
+      .getResponse<
+        FastifyReply & { setHeader?: (name: string, value: string) => void }
+      >();
 
-    const traceId = request.headers['x-trace-id'] || uuidv4();
+    const traceIdHeader = request.headers['x-trace-id'];
+    const traceId =
+      (Array.isArray(traceIdHeader) ? traceIdHeader[0] : traceIdHeader) ||
+      uuidv4();
     request.traceId = traceId;
 
     // Gắn traceId ngược lại vào Response Header để Client dễ dàng debug (Fastify & Express)
-    if (response.header) {
+    if (typeof response.header === 'function') {
       response.header('x-trace-id', traceId); // Fastify
-    } else if (response.setHeader) {
+    } else if (typeof response.setHeader === 'function') {
       response.setHeader('x-trace-id', traceId); // Express fallback
     }
 

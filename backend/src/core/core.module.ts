@@ -16,7 +16,9 @@ import { OutboxModule } from './outbox/outbox.module';
 
 import { GlobalExceptionFilter } from './filters/global-exception.filter';
 import { TraceIdInterceptor } from './interceptors/trace-id.interceptor';
-import { IdempotencyGuard } from './guards/idempotency.guard';
+import { TransformInterceptor } from './interceptors/transform.interceptor';
+import { IdempotencyInterceptor } from './interceptors/idempotency.interceptor';
+import { ClassSerializerInterceptor } from '@nestjs/common';
 
 @Module({
   imports: [
@@ -44,8 +46,10 @@ import { IdempotencyGuard } from './guards/idempotency.guard';
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: TraceIdInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ClassSerializerInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_GUARD, useClass: IdempotencyGuard },
   ],
 })
 export class CoreModule {}

@@ -25,6 +25,18 @@ export const envSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.coerce.number().default(604800), // 7d
   COOKIE_SECRET: z.string().min(16),
   PERMISSION_CACHE_TTL: z.coerce.number().default(3600), // 1h
+  STORAGE_PUBLIC_URL: z
+    .string()
+    .url()
+    .default('http://localhost:9000/user-media'),
+  JWT_SETUP_EXPIRES_IN: z.string().default('15m'),
+  JWT_SETUP_COOKIE_MAX_AGE_MS: z.coerce.number().default(15 * 60 * 1000), // 15m
+  BRUTE_FORCE_BLOCK_MIN_SEC: z.coerce.number().default(300), // 5m
+  BRUTE_FORCE_BLOCK_MAX_SEC: z.coerce.number().default(900), // 15m
+  ACTIVATION_TOKEN_TTL_SEC: z.coerce.number().default(172800), // 48h
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .default('http://localhost:5174,http://localhost:3000'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
