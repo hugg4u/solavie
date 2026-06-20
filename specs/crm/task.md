@@ -1,6 +1,10 @@
 # Task Lập Trình Module CRM (Developer Tasks)
 
 - `[ ]` **Setup Entity & Migration:** Khởi tạo các TypeORM Entities cho `crm_customers`, `crm_stages`, `crm_field_definitions`, `crm_scoring_rules`, `crm_activities`.
+- `[ ]` **CRM Permissions & Sync Config:**
+  - Tạo tệp `crm.permissions.ts` chứa các hằng số quyền của CRM.
+  - Đăng ký hằng số này vào `permission-registry.ts` ở Core để kích hoạt Auto-Sync khi chạy hệ thống.
+  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full crm.*, `SALES` chỉ crm.customers.read/update, crm.notes.*).
 - `[ ]` **CRUD Configuration:** Viết các APIs cho Admin cấu hình Fields, Stages, Rules.
 - `[ ]` **Dynamic Pipeline Logic:** Implement Service Layer kiểm tra Entrance Criteria khi đổi Stage.
 - [ ] **Merge Logic:** Implement Service gom nhóm hồ sơ trùng số điện thoại và cập nhật trỏ lại `customer_id` cho các cuộc hội thoại liên quan.
@@ -10,11 +14,15 @@
 - `[ ]` **Activity Observer:** Viết Subscribers lắng nghe Event để tự động ghi log vào `crm_activities`.
 - `[ ]` **Audit Database Setup:** Tạo migration và TypeORM Entity cho bảng `crm_audit_logs` để lưu trữ snapshot thay đổi dạng JSONB.
 - `[ ]` **TypeORM Audit Subscriber:** Viết `CrmAuditSubscriber` để tự động bắt các sự kiện ghi dữ liệu của các bảng được cấu hình và lưu snapshot.
-- `[ ]` **CRM Audit & Undo API:** Xây dựng các API `GET /api/v1/crm/audit-logs` và `POST /api/v1/crm/audit-logs/:id/undo` kèm phân quyền check quyền `crm:undo`.
+- `[ ]` **CRM Audit & Undo API:** Xây dựng các API `GET /api/v1/crm/audit-logs` (áp dụng `TypeOrmQueryHelper`) và `POST /api/v1/crm/audit-logs/:id/undo` kèm phân quyền check quyền `crm.audit.undo`.
 - `[ ]` **Undo Transaction Service:** Viết `CrmUndoService` xử lý khôi phục dữ liệu an toàn dựa trên snapshot, đảm bảo chạy trong database transaction và bắt lỗi ràng buộc cơ sở dữ liệu.
 - `[ ]` **Take-Note Entity & Migration:** Tạo TypeORM Entity và file migration cho bảng `crm_customer_notes` (thiết lập soft link tới khách hàng và nhân viên).
-- `[ ]` **Customer Notes APIs:** Xây dựng các REST APIs `GET /api/v1/crm/customers/:id/notes`, `POST`, `PUT`, `DELETE` và `PATCH /notes/:noteId/pin` kèm theo các validation DTOs.
-- `[ ]` **Notes Guard & Auth Logic:** Triển khai cơ chế kiểm tra quyền truy cập: chỉ người tạo ghi chú hoặc Admin mới được phép sửa hoặc xóa ghi chú.
+- `[ ]` **Customer Notes APIs:** Xây dựng các REST APIs `GET /api/v1/crm/customers/:id/notes` (áp dụng `TypeOrmQueryHelper`), `POST`, `PUT`, `DELETE` và `PATCH /notes/:noteId/pin` kèm theo các validation DTOs.
+- `[ ]` **CRM Resource Hydrators implementation:**
+  - Triển khai `CustomerHydrator` và `NoteHydrator` kế thừa `ResourceHydrator`.
+  - Đăng ký các Hydrator này vào `ResourceHydratorRegistry` ở pha `onModuleInit` để tích hợp động với `PermissionsGuard`.
+- `[ ]` **Customer List API Refactoring:** Tái cấu trúc API `GET /api/v1/crm/customers` kế thừa `PaginationQueryDto` và sử dụng `TypeOrmQueryHelper.apply()` để hỗ trợ phân trang, tìm kiếm, lọc và sắp xếp.
+- `[ ]` **Take-Note Audit Registration:** Cấu hình để `CrmAuditSubscriber` tự động lưu vết audit log khi có thao tác INSERT, UPDATE, DELETE trên bảng `crm_customer_notes`.
 - `[ ]` **Take-Note Audit Registration:** Cấu hình để `CrmAuditSubscriber` tự động lưu vết audit log khi có thao tác INSERT, UPDATE, DELETE trên bảng `crm_customer_notes`.
 
 ## Phase 3: Event-Driven Notification Integration

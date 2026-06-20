@@ -50,3 +50,22 @@ Thay vì xử lý các tác vụ nặng nề trên Application Layer (Node.js/Ne
   3. Worker độc lập (chạy ngầm) bốc job, dùng thư viện `sharp` để nén ảnh (Resize) và đổi đuôi sang `.webp`.
   4. Worker ghi đè kết quả lên MinIO và xóa file gốc (nếu khác định dạng).
 
+---
+
+## 5. Đặc Tả Phân Quyền & ABAC Resource Hydrator của Module Storage
+Để bảo vệ các tệp tin lưu trữ và tránh người dùng truy cập trái phép hoặc xóa nhầm tệp của người khác, module Storage tích hợp cơ chế bảo mật sau:
+
+### 5.1. Phân quyền API
+- `POST /api/v1/storage/presigned-post`: Yêu cầu quyền `storage.files.upload`.
+- `POST /api/v1/storage/confirm`: Yêu cầu quyền `storage.files.upload`.
+- `GET /api/v1/storage/presigned-download/:id`: Yêu cầu quyền `storage.files.read`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
+- `DELETE /api/v1/storage/files/:id`: Yêu cầu quyền `storage.files.delete`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
+
+### 5.2. `FileHydrator` (Prefix nhận diện: `storage.file`)
+Module Storage triển khai và đăng ký dịch vụ sau với `ResourceHydratorRegistry` ở Core:
+*   *Phương thức nạp:* `fetchResource(fileId: string)`
+*   *SQL Select:* Chỉ lấy các trường `id`, `uploader_id`, `bucket_name`, `object_key`.
+*   *Áp dụng:* Cung cấp siêu dữ liệu tệp tin cho `PermissionsGuard` kiểm duyệt.
+
+---
+

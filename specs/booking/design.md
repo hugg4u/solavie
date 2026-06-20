@@ -148,3 +148,27 @@ Các bảng thuộc module Đặt Lịch Hẹn sử dụng tiền tố `booking_
           endTime: string; // Format "HH:mm"
         }
         ```
+
+### 2.5. Lấy danh sách Lịch hẹn (Appointments List - Portal)
+*   **Method & Route:** `GET /api/v1/booking/appointments`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('booking.appointments.read')`
+*   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` để xử lý phân trang, lọc và tìm kiếm.
+*   *Search fields:* `appointment.customerName`, `appointment.customerEmail`, `appointment.customerPhone`.
+*   *Filter fields:* `status` (trạng thái lịch), `event_type_id` (loại sự kiện), `host_id` (Sales host).
+*   *Sort fields:* `start_time`, `created_at`.
+*   *Format đầu ra:* `PaginatedResponseDto<BookingAppointmentEntity>`.
+
+---
+
+## 3. Đặc Tả ABAC Resource Hydrators của Module Booking
+Để phục vụ việc kiểm tra phân quyền động (ví dụ: chỉ host Sales hoặc Khách hàng sở hữu lịch hẹn mới được hủy/dời lịch hẹn), module Đặt Lịch Hẹn tự khai báo và đăng ký dịch vụ sau với `ResourceHydratorRegistry` ở Core:
+
+1.  **`BookingHydrator` (Prefix nhận diện: `booking.appointment`):**
+    *   *Phương thức nạp:* `fetchResource(appointmentId: string)`
+    *   *SQL Select:* Chỉ lấy các trường `id`, `host_id`, `customer_id`, `status`.
+    *   *Áp dụng:* Bảo vệ các API cập nhật lịch hẹn như:
+        *   `PUT /api/v1/booking/appointments/:id/cancel`
+        *   `PUT /api/v1/booking/appointments/:id/reschedule`
+    *   *Quy tắc so khớp ABAC:* `user.id == resource.hostId` hoặc `user.id == resource.customerId` (Bypass đối với Admin/Manager).
+
+---

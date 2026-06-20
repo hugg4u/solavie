@@ -21,17 +21,20 @@
 ## Phase C: Triển Khai Mã Nguồn
 
 ### C.1 — Module Setup & Database
+- [ ] **C1.0**: Cấu hình `notification.permissions.ts` chứa danh sách quyền, đăng ký vào Registry hệ thống và seeder.
 - [ ] **C1.1**: Tạo `src/notification/notification.module.ts` (NestJS Module declaration)
 - [ ] **C1.2**: Tạo migration database: `notification_preferences`, `notification_templates`, `notification_logs`
 - [ ] **C1.3**: Tạo entities TypeORM: `NotificationPreferenceEntity`, `NotificationTemplateEntity`, `NotificationLogEntity`
 - [ ] **C1.4**: Tạo repositories tương ứng
 
-### C.2 — Core Services
+### C.2 — Core Services & APIs
 - [ ] **C2.1**: Implement `IdempotencyService` (SHA256 key generation + DB check) [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **C2.2**: Implement `PreferenceService` (lookup + quiet hours check + event override check)
 - [ ] **C2.3**: Implement `TemplateEngineService` (Handlebars renderer + template lookup)
 - [ ] **C2.4**: Implement `NotificationRouter` (fan-out logic + channel decision matrix)
 - [ ] **C2.5**: Implement `NotificationService` (main orchestrator + @OnEvent handlers cho tất cả 13 event types)
+- [ ] **C2.6**: Triển khai `PreferenceHydrator` (kế thừa `ResourceHydrator`) và đăng ký vào Registry ở Core.
+- [ ] **C2.7**: Xây dựng các API lấy danh sách: logs (`GET /api/v1/notification/logs`) và templates (`GET /api/v1/notification/templates`), sử dụng `TypeOrmQueryHelper.apply()` để phân trang, lọc, sắp xếp.
 
 ### C.3 — Provider Pattern
 - [ ] **C3.1**: Định nghĩa `INotificationProvider` interface

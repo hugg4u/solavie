@@ -165,14 +165,28 @@ Trước khi gửi body request lên LiteLLM Gateway, Core Backend sẽ đưa pa
 
 ### 4.2. API Endpoints Quản Lý Cấu Hình (Admin API)
 - `GET /api/v1/gateway/providers`: Lấy danh sách provider và trạng thái.
-- `POST /api/v1/gateway/providers`: Thêm mới cấu hình API Key và thiết lập priority (Yêu cầu header `Idempotency-Key`).
+- `POST /api/v1/gateway/providers`: Thêm mới cấu hình API Key và thiết lập priority (Yêu cầu header `Idempotency-Key` để chống trùng lặp).
 - `PUT /api/v1/gateway/providers/:id`: Cập nhật API Key, priority hoặc trạng thái (Yêu cầu header `Idempotency-Key`).
 - `GET /api/v1/gateway/usecases`: Lấy danh sách cấu hình usecases hiện tại.
 - `PATCH /api/v1/gateway/usecases/:id`: Cập nhật cấu hình chọn model (`provider_model_id`) cho kịch bản cụ thể.
 - `POST /api/v1/gateway/models/sync`: API kích hoạt công việc (Sync Job) bằng tay để đồng bộ hóa danh sách Model, Context và chi phí từ LiteLLM Gateway `/public/litellm_model_cost_map`.
 - **`GET /api/v1/gateway/metrics/summary`**: Thống kê tổng hợp chi phí AI theo thời gian (ngày/tuần/tháng), phân nhóm theo usecase, model hoặc provider để phục vụ vẽ chart Admin.
-- **`GET /api/v1/gateway/metrics/raw`**: Lấy lịch sử chi tiết danh sách cuộc gọi AI (Hỗ trợ phân trang, lọc theo usecase, model, provider, conversation_id).
+- **`GET /api/v1/gateway/metrics/raw`**: Lấy lịch sử chi tiết danh sách cuộc gọi AI.
+  *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc (`provider_id`, `model_name`, `usecase_key`, `conversation_id`), sắp xếp (`created_at`, `latency_ms`, `total_cost`), và tìm kiếm (`model_name`, `usecase_key`).
+  *   **Format đầu ra:** `PaginatedResponseDto<LlmMetricEntity>`.
 - **`POST /api/v1/chat/conversations/:id/handback`**: Bàn giao lại cuộc trò chuyện từ chế độ `MANUAL` về `AUTOMATIC` để kích hoạt lại AI Chatbot phản hồi tự động.
+  *   **Guard/Permission:** `JwtAuthGuard`, `PermissionsGuard`, `@RequirePermissions('chat:write')`.
+  *   **Kiểm tra ABAC:** Sử dụng `ConversationHydrator` nạp dữ liệu cuộc trò chuyện và đối sánh điều kiện: Chỉ cho phép người được gán (`assignee_id` trùng `user.id`) hoặc người dùng có vai trò Admin/Manager thực hiện bàn giao lại cho AI.
+
+---
+
+### 4.3. Đặc Tả Permission Constants & ABAC Resource Hydrators
+Để đảm bảo thống nhất phân quyền và hỗ trợ kiểm tra động:
+1.  **Permission Constants:** Module Chatbot định nghĩa file `chatbot.permissions.ts` chứa các quyền quản trị như `gateway:read`, `gateway:write`, `chatbot:read`, `chatbot:write` và tự động đăng ký với Core Permission Registry khi ứng dụng khởi chạy.
+2.  **`ConversationHydrator` (Prefix nhận diện: `inbox.conversation` và `chatbot.conversation`):**
+    *   *Phương thức nạp:* `fetchResource(conversationId: string)` nạp từ bảng `chat_conversations`.
+    *   *SQL Select:* Chỉ lấy các trường tối thiểu `id`, `state`, `assignee_id`, `channel`.
+    *   *Đăng ký:* Đăng ký với `ResourceHydratorRegistry` từ Core Database để các module khác (như Inbox) có thể sử dụng kiểm tra quyền sở hữu và trạng thái cuộc trò chuyện động.
 
 
 ## 5. Thiết Kế Cơ Chế Dynamic Debounce & Khóa Đồng Thời (Redis & BullMQ)

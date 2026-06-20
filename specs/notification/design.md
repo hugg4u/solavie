@@ -410,3 +410,42 @@ BullModule.registerQueue({
   },
 });
 ```
+
+---
+
+## 9. Đặc Tả API Quản Lý & Phân Quyền (REST APIs & ABAC)
+
+### 9.1. Lấy danh sách Nhật ký gửi (Notification Logs - Admin/Manager)
+*   **Method & Route:** `GET /api/v1/notification/logs`
+*   **Permission:** `RequirePermissions('notification.logs.read')`
+*   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
+*   *Search fields:* `log.recipientContact`, `log.eventType`.
+*   *Filter fields:* `status`, `channel`, `recipientType`.
+*   *Sort fields:* `created_at`.
+*   *Format đầu ra:* `PaginatedResponseDto<NotificationLogEntity>`.
+
+### 9.2. Quản lý Mẫu thông báo (Templates - Admin Only)
+*   **Method & Route:** `GET /api/v1/notification/templates`
+*   **Permission:** `RequirePermissions('notification.templates.manage')`
+*   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
+*   *Search fields:* `template.eventType`, `template.subject`.
+*   *Filter fields:* `channel`, `language`, `isActive`.
+*   *Sort fields:* `updated_at`.
+*   *Format đầu ra:* `PaginatedResponseDto<NotificationTemplateEntity>`.
+
+### 9.3. Cấu hình Tùy chọn Nhận thông báo (Preferences - Owner or Admin)
+*   **Lấy tùy chọn:** `GET /api/v1/notification/preferences/:userId`
+*   **Cập nhật tùy chọn:** `POST /api/v1/notification/preferences/:userId`
+*   *Phân quyền ABAC:* Yêu cầu quyền `notification.preferences.update`. Áp dụng kiểm tra `user.id == resource.userId` (Chuyên viên chỉ được xem/sửa tùy chọn của chính mình).
+
+---
+
+## 10. Đặc Tả ABAC Resource Hydrators của Module Notification
+Để hỗ trợ `PermissionsGuard` kiểm duyệt quyền truy cập tùy chọn cấu hình của User:
+
+1.  **`PreferenceHydrator` (Prefix nhận diện: `notification.preference`):**
+    *   *Phương thức nạp:* `fetchResource(userId: string)`
+    *   *SQL Select:* Chỉ lấy các trường `id`, `user_id`.
+    *   *Áp dụng:* Bảo vệ các API liên quan đến `notification_preferences`.
+
+---

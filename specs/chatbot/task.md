@@ -3,6 +3,7 @@
 Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5 Phase triển khai tuần tự theo thực tiễn tốt nhất (Best Practice):
 
 ## Phase 1: Setup Infrastructure & Base LLM Engine
+- [ ] **Define Permission Constants:** Định nghĩa file `chatbot.permissions.ts` chứa các hằng số quyền (`gateway:read`, `gateway:write`, `chatbot:read`, `chatbot:write`) và đăng ký tự động vào global registry lúc khởi chạy.
 - [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics`, bảng `chatbot_outbox_events` (cho Transactional Outbox) và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [x] **LLM Gateway (LiteLLM):** Cấu hình container LiteLLM (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
 - [ ] **LLM Base Adapter:** Khai báo Interface `BaseLLMAdapter` trong NestJS.
@@ -43,7 +44,8 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Migration Add Customer ID:** Tạo file migration thêm cột `customer_id` (UUID, soft link) vào bảng `chat_conversations`.
 - [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Handover Message Logic:** Triển khai `ChatbotHandoverService` tự động gửi tin nhắn phản hồi lịch sự ngay lập tức khi chuyển chế độ sang `MANUAL`. (Tin nhắn này gửi ra ngoài cho khách qua Facebook/Zalo API — khác với notification nội bộ cho Sales.)
-- [ ] **Handback API Implementation:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm guard phân quyền `chat:write` và bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate). [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
+- [ ] **Implement ConversationHydrator:** Xây dựng `ConversationHydrator` triển khai interface `ResourceHydrator` từ Core Database, chỉ select các trường tối thiểu (`id`, `state`, `assignee_id`, `channel`) và đăng ký với `ResourceHydratorRegistry` dưới các tiền tố `inbox.conversation` và `chatbot.conversation`.
+- [ ] **Handback API with ABAC:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm `JwtAuthGuard` và `PermissionsGuard` (yêu cầu quyền `chat:write`). Sử dụng `ConversationHydrator` để kiểm tra ABAC (chỉ cho phép assignee của cuộc hội thoại hoặc Admin/Manager thực hiện). Bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate). [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **Chatbot Outbox Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 
 ## Phase 5: Centralized Logging, Sync Job & Monitoring
@@ -51,7 +53,7 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Metrics Tracker:** Ghi nhận token usage, cost, latency và matching score của RAG vào log metadata.
 - [ ] **Models Sync Job:** Triển khai Cron Job hàng ngày kết nối tới LiteLLM `/public/litellm_model_cost_map` để tự động upsert thông số model (max_tokens, costs, raw_metadata) và phân loại tier.
 - [ ] **Manual Sync Endpoint:** Triển khai API `/api/v1/gateway/models/sync` cho phép Admin kích hoạt đồng bộ model bằng tay.
-- [ ] **Admin Cost Analytics API:** Triển khai các API endpoints `/api/v1/gateway/metrics/summary` và `/metrics/raw` phục vụ vẽ biểu đồ báo cáo tài chính AI.
+- [ ] **Admin Cost Analytics API with QueryHelper:** Triển khai endpoints `/api/v1/gateway/metrics/summary` và `/api/v1/gateway/metrics/raw`. Tích hợp `TypeOrmQueryHelper` cho endpoint `/metrics/raw` để xử lý phân trang, lọc (`provider_id`, `model_name`, `usecase_key`, `conversation_id`), sắp xếp (`created_at`, `latency_ms`, `total_cost`), và tìm kiếm (`model_name`, `usecase_key`).
 
 ## Phase 6: Prompt Optimization & Evals Engine
 - [ ] **Migration for Evals Tables:** Tạo file migration và Entities cho hai bảng `chat_eval_datasets` và `chat_eval_results`.

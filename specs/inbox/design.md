@@ -164,3 +164,38 @@ Thiết lập một WebSocket Gateway trong NestJS (`InboxGateway`) để đẩy
 #### 5. Bắn thông báo được Tag tên trong Ghi chú nội bộ
 *   **Event Server gửi đi (Gửi trực tiếp đến User Socket):** `server:internal_comment.created`
 *   **Payload:** `{ conversationId: string, commentId: string, taggedByName: string, briefContent: string }`
+
+---
+
+## 5. Đặc Tả API Quản Lý & Phân Quyền (REST APIs & ABAC)
+
+### 5.1. API Lấy danh sách cuộc hội thoại cho Feed
+*   **Method & Route:** `GET /api/v1/inbox/conversations`
+*   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
+*   *Search fields:* `conversation.customer_name`, `conversation.last_message_content`.
+*   *Filter fields:* `state` (`AUTOMATIC` / `MANUAL`), `assignee_id` (Sales được gán), `channel` (`FACEBOOK` / `ZALO`).
+*   *Sort fields:* `last_message_at`, `created_at`.
+*   *Format đầu ra:* `PaginatedResponseDto<ConversationFeedDto>`.
+
+### 5.2. API Lấy danh sách câu trả lời nhanh
+*   **Method & Route:** `GET /api/v1/inbox/quick-replies`
+*   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
+*   *Search fields:* `quickReply.shortcut`, `quickReply.content`.
+*   *Sort fields:* `shortcut`, `created_at`.
+*   *Format đầu ra:* `PaginatedResponseDto<InboxQuickReplyEntity>`.
+
+### 5.3. Thao tác tiếp quản và gửi tin nhắn (ABAC Checks)
+*   **Claim Chat (`POST /inbox/conversations/:id/claim`):** Chỉ cho phép nếu cuộc hội thoại có trạng thái `MANUAL` và `assignee_id` đang rỗng (NULL).
+*   **Gửi tin nhắn / Thảo luận nội bộ (`POST /inbox/conversations/:id/messages` hoặc `/comments`):** Chỉ cho phép nếu cuộc hội thoại có trạng thái `MANUAL` và `assignee_id` trùng khớp với `user.id` (hoặc là Admin/Manager bypass). Chặn đứng nếu đang ở trạng thái `AUTOMATIC` (để tránh tranh chấp với AI).
+
+---
+
+## 6. Đặc Tả ABAC Resource Hydrators của Module Agent Inbox
+Để hỗ trợ `PermissionsGuard` kiểm tra trạng thái và quyền sở hữu cuộc trò chuyện mà không phụ thuộc trực tiếp vào DB của Chatbot/Inbox:
+
+1.  **`ConversationHydrator` (Prefix nhận diện: `inbox.conversation`):**
+    *   *Phương thức nạp:* `fetchResource(conversationId: string)`
+    *   *SQL Select:* Chỉ lấy các trường `id`, `state`, `assignee_id`, `channel`.
+    *   *Áp dụng:* Bảo vệ các API gửi tin nhắn, viết bình luận nội bộ, và nhận tiếp quản cuộc chat.
+
+---

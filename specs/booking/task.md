@@ -10,11 +10,21 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 - [ ] **Soft Relationships Config:** Định nghĩa các mối liên hệ mềm (soft links) sang bảng khách hàng `crm_customers` và bảng nhân viên `iam_users` tại service layer.
 
 ## Phase 2: Core Scheduling APIs
+- [ ] **Booking Permissions & Sync Config:**
+  - Tạo tệp `booking.permissions.ts` chứa các hằng số quyền của Booking.
+  - Đăng ký hằng số này vào `permission-registry.ts` ở Core để kích hoạt Auto-Sync khi chạy hệ thống.
+  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full booking.*, `SALES` chỉ booking.appointments.read/update).
 - [ ] **Event Types CRUD:** Xây dựng API và controller cho phép Admin quản lý các loại cuộc hẹn mẫu (`GET`, `POST`, `PUT` /api/v1/booking/event-types).
 - [ ] **Sales Availability CRUD:** Triển khai API cho phép nhân viên Sales tùy chỉnh thời gian làm việc của mình theo tuần (`GET`, `POST` /api/v1/booking/availabilities).
 - [ ] **Available Slots Calculation Service:** Triển khai `AvailableSlotsService` hiện thực hóa thuật toán sinh khung giờ trống (lọc trùng lịch DB, lọc trùng lịch Google Calendar, áp dụng Buffer Time 15p và Min Notice 2 tiếng).
 - [ ] **Slots Query Endpoint:** Khai báo route public `GET /api/v1/booking/slots` để trả về danh sách khung giờ trống của Sales cho cổng Web Portal hoặc AI Chatbot.
-- [ ] **ABAC Data Filtering cho Appointments:** Bổ sung logic QueryBuilder lọc `.andWhere('host_id = :userId')` nếu Role là SALES khi lấy danh sách cuộc hẹn.
+- [ ] **Appointments List API with Helper:**
+  - Khởi tạo API `GET /api/v1/booking/appointments` hỗ trợ đầy đủ các tham số truy vấn kế thừa `PaginationQueryDto`.
+  - Áp dụng `TypeOrmQueryHelper.apply()` để xử lý lọc trạng thái, tìm kiếm, phân trang và sắp xếp động.
+- [ ] **Booking Resource Hydrator implementation:**
+  - Triển khai `BookingHydrator` kế thừa `ResourceHydrator` để nạp `host_id`, `customer_id`, `status` từ DB.
+  - Đăng ký vào `ResourceHydratorRegistry` ở pha `onModuleInit` để tự động tích hợp với `PermissionsGuard`.
+- [ ] **ABAC Data Filtering cho Appointments:** Bổ sung logic QueryBuilder lọc `.andWhere('host_id = :userId')` nếu Role là SALES khi lấy danh sách cuộc hẹn (hoặc thông qua ABAC Expression).
 
 ## Phase 3: Booking & CRM Synchronization
 - [ ] **Appointment Booking API:** Triển khai API `POST /api/v1/booking/appointments` cho phép đặt lịch hẹn.
@@ -22,7 +32,7 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 - [ ] **Round-Robin Host Allocation:** Tích hợp logic tự động gán Sales Rep xoay vòng dựa trên Redis pointer nếu khách không chỉ định Sales trực tiếp.
 - [ ] **CRM Customer Sync:** Triển khai logic tự động tìm hoặc tạo hồ sơ khách hàng `crm_customers` khi đặt lịch thành công, tự động gán `assignee_id` cho Sales host.
 - [ ] **CRM Activity Timeline Logging:** Tự động ghi nhận log hoạt động loại `APPOINTMENT_SCHEDULED` vào timeline `crm_activities` của khách hàng.
-- [ ] **Cancel & Reschedule APIs:** Triển khai API hủy lịch và dời lịch hẹn, thực hiện cập nhật DB trạng thái `CANCELLED` hoặc `RESCHEDULED`.
+- [ ] **Cancel & Reschedule APIs:** Triển khai API hủy lịch và dời lịch hẹn, thực hiện cập nhật DB trạng thái `CANCELLED` hoặc `RESCHEDULED`. (Sử dụng `PermissionsGuard` kết hợp `BookingHydrator` để kiểm tra quyền).
 
 ## Phase 4: Event-Driven Notification Integration
 - [ ] **AppointmentConfirmedEvent Class:** Tạo class `AppointmentConfirmedEvent` và `AppointmentCancelledEvent` trong `booking/events/` chứa đầy đủ payload (eventId, salesInfo, customerInfo, meetLink, locationType).

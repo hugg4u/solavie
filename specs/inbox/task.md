@@ -23,21 +23,22 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
   - Nếu `isTyping = false`: Xóa key trong Redis `cache` (nếu đúng Agent đang giữ lock) và phát event `server:typing_status` với `isTyping = false`.
 
 ## Phase 3: REST APIs Implementation
-- [ ] **Inbox Feed API & ABAC:** Triển khai endpoint `GET /api/v1/inbox/conversations` kèm JWT Guard. Tích hợp ABAC Filtering qua QueryBuilder (Sales chỉ xem hội thoại của mình hoặc MANUAL vô chủ). Hỗ trợ phân trang, trạng thái, assignee và channel.
+- [ ] **Define Permission Constants:** Tạo file `inbox.permissions.ts` định nghĩa các hằng số quyền như `chat:read`, `chat:write` và đăng ký tự động vào global registry lúc khởi chạy.
+- [ ] **Implement ConversationHydrator:** Xây dựng `ConversationHydrator` triển khai interface `ResourceHydrator` từ Core Database, chỉ select các trường tối thiểu (`id`, `state`, `assignee_id`, `channel`) và đăng ký với `ResourceHydratorRegistry` dưới tiền tố `inbox.conversation`.
+- [ ] **Inbox Feed API with QueryHelper:** Triển khai endpoint `GET /api/v1/inbox/conversations` kèm `JwtAuthGuard` và `PermissionsGuard`. Tích hợp `TypeOrmQueryHelper` để xử lý phân trang, lọc (`state`, `assignee_id`, `channel`), sắp xếp (`last_message_at`, `created_at`), và tìm kiếm (`customer_name`, `last_message_content`).
 - [ ] **Timeline Sync API:** Triển khai endpoint `GET /api/v1/inbox/conversations/:id/timeline` thu thập cả tin nhắn hội thoại (`chat_messages`) và bình luận nội bộ (`inbox_internal_comments`), gộp và sắp xếp theo thời gian để hiển thị trên dòng thời gian Portal.
-- [ ] **Claim Conversation API:** Triển khai endpoint `POST /api/v1/inbox/conversations/:id/claim` cho phép Sales chủ động tiếp quản chat. Cập nhật `assignee_id = agentId`, chuyển `state = 'MANUAL'`, và broadcast event `server:conversation.assigned` tới toàn hệ thống.
-- [ ] **Sales Send Message API:**
-  - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/messages`.
-  - Nếu cuộc chat đang ở trạng thái `AUTOMATIC`, chuyển sang `MANUAL` và gán cho Agent hiện tại, broadcast event gán vai mới.
+- [ ] **Claim Conversation API with ABAC:** Triển khai endpoint `POST /api/v1/inbox/conversations/:id/claim` kèm check ABAC (chỉ cho phép nếu cuộc hội thoại có trạng thái `MANUAL` và `assignee_id` rỗng). Cập nhật `assignee_id = agentId`, chuyển `state = 'MANUAL'`, và broadcast event `server:conversation.assigned`.
+- [ ] **Sales Send Message API with ABAC:**
+  - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/messages` kèm check ABAC (chỉ cho phép nếu trạng thái là `MANUAL` và `assignee_id` là user hiện tại hoặc là Admin/Manager).
   - Lưu tin nhắn vào DB dưới dạng `HUMAN_AGENT`.
   - Gọi HTTP Client `GatewayApiService` để đẩy tin sang Facebook/Zalo API thực tế.
   - Xóa Typing Lock trên Redis và broadcast sự kiện tắt trạng thái gõ phím.
-- [ ] **Internal Comments API:**
-  - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/comments`.
+- [ ] **Internal Comments API with ABAC:**
+  - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/comments` kèm check ABAC (chỉ cho phép nếu trạng thái `MANUAL` và `assignee_id` là user hiện tại hoặc Admin/Manager).
   - Lưu ghi chú vào bảng `inbox_internal_comments`.
-  - Trích xuất tags `@username` từ nội dung comment bằng Regex. Tìm `userId` tương ứng và ghi bản ghi `inbox.agent_mentioned` vào bảng `inbox_outbox_events` (có `eventId`) trong cùng DB Transaction. Không bắn WebSocket event trực tiếp từ Inbox Module.
+  - Trích xuất tags `@username` từ nội dung comment bằng Regex. Tìm `userId` tương ứng và ghi bản ghi `inbox.agent_mentioned` vào bảng `inbox_outbox_events` trong cùng DB Transaction.
 - [ ] **Inbox Outbox Processor & Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper (dùng `SKIP LOCKED`) quét định kỳ bảng `inbox_outbox_events` và publish ra Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
-- [ ] **Quick Replies API:** Triển khai endpoint `GET /api/v1/inbox/quick-replies` để lấy các mẫu câu trả lời nhanh đã cấu hình sẵn.
+- [ ] **Quick Replies API with QueryHelper:** Triển khai endpoint `GET /api/v1/inbox/quick-replies` sử dụng `TypeOrmQueryHelper` hỗ trợ lọc, tìm kiếm và phân trang cho các mẫu câu trả lời nhanh.
 
 ## Phase 4: Round-Robin Auto-Routing Implementation
 - [ ] **Auto-Assignment Service:** Triển khai `AutoAssignmentService` và phương thức `assignConversationRoundRobin(conversationId)`.

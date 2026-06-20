@@ -72,30 +72,65 @@ Module CRM bao gồm các bảng chính sau, sử dụng khóa chính dạng UUI
 ## 2. Thiết Kế API Endpoints (RESTful)
 
 ### 2.1. Customer Management
-- `GET /api/v1/crm/customers`: Lấy danh sách khách hàng (Hỗ trợ phân trang, lọc theo stage, score).
+- `GET /api/v1/crm/customers`: Lấy danh sách khách hàng.
+  *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` để xử lý phân trang, sắp xếp và tìm kiếm.
+  *   *Search fields:* `user.fullName`, `user.phone_number`, `user.email`.
+  *   *Filter fields:* `stage_id` (trạng thái pipeline), `lead_temperature` (độ ấm), `assignee_id` (Sales phụ trách).
+  *   *Sort fields:* `full_name`, `lead_score`, `created_at`.
+  *   *Format đầu ra:* `PaginatedResponseDto<CustomerEntity>`.
 - `GET /api/v1/crm/customers/:id`: Lấy chi tiết khách hàng và timeline.
-- `POST /api/v1/crm/customers`: Tạo hồ sơ mới.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.customers.read`. Đối với Sales, kiểm tra biểu thức so khớp `user.id == resource.assigneeId` (Bypass đối với Admin/Manager).
+- `POST /api/v1/crm/customers`: Tạo hồ sơ mới (Quyền: `crm.customers.create`).
 - `PUT /api/v1/crm/customers/:id`: Cập nhật thông tin.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.customers.update`. Kiểm tra biểu thức so khớp `user.id == resource.assigneeId`.
 - `PATCH /api/v1/crm/customers/:id/stage`: Cập nhật trạng thái Pipeline.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.customers.update`. Kiểm tra biểu thức so khớp `user.id == resource.assigneeId`.
 
 ### 2.2. Configuration Management (Admin Only)
-- `GET/POST/PUT /api/v1/crm/settings/fields`: Quản lý Custom Fields.
-- `GET/POST/PUT /api/v1/crm/settings/stages`: Quản lý Pipeline Stages.
-- `GET/POST/PUT /api/v1/crm/settings/scoring-rules`: Quản lý Scoring Rules.
+- `GET/POST/PUT /api/v1/crm/settings/fields`: Quản lý Custom Fields (Quyền: `crm.settings.manage`).
+- `GET/POST/PUT /api/v1/crm/settings/stages`: Quản lý Pipeline Stages (Quyền: `crm.settings.manage`).
+- `GET/POST/PUT /api/v1/crm/settings/scoring-rules`: Quản lý Scoring Rules (Quyền: `crm.settings.manage`).
 
 ### 2.3. Solar Logic
 - `POST /api/v1/crm/customers/:id/roi-calculate`: Tính toán lại ROI dựa trên custom_fields mới.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.customers.update`. Kiểm tra biểu thức so khớp `user.id == resource.assigneeId`.
 
 ### 2.4. Audit Log & Undo API
-- `GET /api/v1/crm/audit-logs`: Lấy danh sách lịch sử thay đổi dữ liệu (Hỗ trợ phân trang, lọc theo `table_name`, `record_id`, `actor_id`).
-- `POST /api/v1/crm/audit-logs/:id/undo`: Hoàn tác thay đổi dữ liệu về trạng thái trước đó dựa trên ID của log audit.
+- `GET /api/v1/crm/audit-logs`: Lấy danh sách lịch sử thay đổi dữ liệu (Admin/Manager).
+  *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` để xử lý phân trang, sắp xếp và tìm kiếm.
+  *   *Filter fields:* `table_name`, `record_id`, `actor_id`.
+  *   *Sort fields:* `created_at`.
+  *   *Format đầu ra:* `PaginatedResponseDto<CrmAuditLogEntity>`.
+- `POST /api/v1/crm/audit-logs/:id/undo`: Hoàn tác thay đổi dữ liệu về trạng thái trước đó dựa trên ID của log audit (Quyền: `crm.audit.undo`).
 
 ### 2.5. Customer Notes API
-- `GET /api/v1/crm/customers/:id/notes`: Lấy danh sách ghi chú của khách hàng (Hỗ trợ phân trang, sắp xếp ghim `is_pinned DESC, created_at DESC`).
-- `POST /api/v1/crm/customers/:id/notes`: Tạo ghi chú mới.
-- `PUT /api/v1/crm/notes/:noteId`: Sửa nội dung ghi chú (Chỉ người tạo hoặc Admin).
-- `DELETE /api/v1/crm/notes/:noteId`: Xóa ghi chú (Chỉ người tạo hoặc Admin).
+- `GET /api/v1/crm/customers/:id/notes`: Lấy danh sách ghi chú của khách hàng.
+  *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` để xử lý phân trang và sắp xếp.
+  *   *Sort fields:* Mặc định ghim `is_pinned DESC, created_at DESC`.
+  *   *Format đầu ra:* `PaginatedResponseDto<CustomerNoteEntity>`.
+- `POST /api/v1/crm/customers/:id/notes`: Tạo ghi chú mới (Quyền: `crm.notes.create`).
+- `PUT /api/v1/crm/notes/:noteId`: Sửa nội dung ghi chú.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.notes.update`. Kiểm tra biểu thức so khớp `user.id == resource.createdBy`.
+- `DELETE /api/v1/crm/notes/:noteId`: Xóa ghi chú.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.notes.delete`. Kiểm tra biểu thức so khớp `user.id == resource.createdBy`.
 - `PATCH /api/v1/crm/notes/:noteId/pin`: Ghim hoặc bỏ ghim ghi chú.
+  *   *Phân quyền ABAC:* Yêu cầu quyền `crm.notes.update`. Kiểm tra biểu thức so khớp `user.id == resource.createdBy` hoặc là Admin/Manager.
+
+---
+
+## 2.6. Đặc Tả ABAC Resource Hydrators của Module CRM
+Để hỗ trợ `PermissionsGuard` kiểm duyệt các biểu thức ABAC trên mà không làm phá vỡ tính độc lập dữ liệu (Tight Coupling), module CRM tự khai báo và đăng ký 2 Hydrators sau với `ResourceHydratorRegistry` ở Core:
+
+1.  **`CustomerHydrator` (Prefix nhận diện: `crm.customer`):**
+    *   *Phương thức nạp:* `fetchResource(customerId: string)`
+    *   *SQL Select:* Chỉ lấy các trường `id`, `assignee_id`, `stage_id`.
+    *   *Áp dụng:* Bảo vệ các API liên quan đến Hồ sơ khách hàng.
+2.  **`NoteHydrator` (Prefix nhận diện: `crm.notes`):**
+    *   *Phương thức nạp:* `fetchResource(noteId: string)`
+    *   *SQL Select:* Chỉ lấy các trường `id`, `created_by`, `customer_id`.
+    *   *Áp dụng:* Bảo vệ các API chỉnh sửa, xóa, ghim Ghi chú.
+
+---
 
 ---
 
