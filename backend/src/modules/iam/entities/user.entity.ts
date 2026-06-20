@@ -6,10 +6,13 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { UserRoleEntity } from './user-role.entity';
+import { IamTables } from '../constants/iam.constants';
+import { UserSettingEntity } from './user-setting.entity';
 
-@Entity('iam_users')
+@Entity(IamTables.USERS)
 export class UserEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -17,7 +20,7 @@ export class UserEntity {
   @Column({ unique: true })
   email: string;
 
-  @Column({ name: 'password_hash', nullable: true })
+  @Column({ name: 'password_hash', nullable: true, select: false })
   passwordHash: string | null;
 
   @Column({ name: 'full_name' })
@@ -28,6 +31,11 @@ export class UserEntity {
 
   @Column({ name: 'is_active', default: false })
   isActive: boolean;
+
+  @OneToOne(() => UserSettingEntity, (setting) => setting.user, {
+    cascade: true,
+  })
+  setting: UserSettingEntity;
 
   @OneToMany(() => UserRoleEntity, (userRole) => userRole.user)
   userRoles: UserRoleEntity[];

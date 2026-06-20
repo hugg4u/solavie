@@ -5,11 +5,14 @@ import {
   JoinColumn,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
 import { RoleEntity } from './role.entity';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_user_roles')
+@Entity(IamTables.USER_ROLES)
+@Index(['userId', 'roleId'], { unique: true })
 export class UserRoleEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

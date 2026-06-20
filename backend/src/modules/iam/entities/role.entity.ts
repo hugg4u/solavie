@@ -7,9 +7,10 @@ import {
   OneToMany,
 } from 'typeorm';
 import { UserRoleEntity } from './user-role.entity';
+import { IamTables } from '../constants/iam.constants';
 import { PolicyEntity } from './policy.entity';
 
-@Entity('iam_roles')
+@Entity(IamTables.ROLES)
 export class RoleEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

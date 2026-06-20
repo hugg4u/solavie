@@ -1,9 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import {
   Injectable,
   CanActivate,
   ExecutionContext,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,9 +15,13 @@ import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 import { UserRoleEntity } from '../entities/user-role.entity';
 import { REDIS_CACHE_CLIENT } from '../../../core/redis/redis.module';
 import { ConfigService } from '@nestjs/config';
+import { IamRedisKeys } from '../constants/iam.constants';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionsGuard.name);
+
   constructor(
     private reflector: Reflector,
     @InjectRepository(UserRoleEntity)
@@ -45,7 +49,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
     if (!user || !user.id) {
       return false;
@@ -54,50 +58,80 @@ export class PermissionsGuard implements CanActivate {
     const userId = user.id;
     let userPermissions: Record<string, true | string[]> = {};
 
-    const cacheKey = `iam:user_permissions:${userId}`;
-    const cachedData = await this.redisClient.get(cacheKey);
+    const cacheKey = `${IamRedisKeys.USER_PERMISSIONS}${userId}`;
+    let cachedData: string | null = null;
+    try {
+      cachedData = await this.redisClient.get(cacheKey);
+    } catch (err) {
+      this.logger.error(
+        `Failed to read permissions cache for user ${userId}`,
+        err,
+      );
+    }
 
     if (cachedData) {
-      userPermissions = JSON.parse(cachedData);
+      userPermissions = JSON.parse(cachedData) as Record<
+        string,
+        true | string[]
+      >;
     } else {
-      const result = await this.userRoleRepository
-        .createQueryBuilder('ur')
-        .innerJoin('ur.role', 'role')
-        .innerJoin('role.policies', 'policy')
-        .innerJoin('policy.permission', 'permission')
-        .where('ur.user_id = :userId', { userId })
-        .select(['permission.code as code', 'policy.rule_expression as rule'])
-        .getRawMany();
+      const userRoles = await this.userRoleRepository.find({
+        where: { userId },
+        relations: {
+          role: {
+            policies: {
+              permission: true,
+            },
+          },
+        },
+      });
 
-      result.forEach((r) => {
-        const { code, rule } = r;
-        if (!userPermissions[code]) {
-          userPermissions[code] = rule ? [rule] : true;
-        } else if (userPermissions[code] !== true) {
-          if (!rule) {
-            userPermissions[code] = true;
-          } else {
-            userPermissions[code].push(rule);
-          }
+      userRoles.forEach((ur) => {
+        if (ur.role && ur.role.policies) {
+          ur.role.policies.forEach((policy) => {
+            if (policy.permission) {
+              const code = policy.permission.action;
+              const rule = policy.ruleExpression;
+              if (!userPermissions[code]) {
+                userPermissions[code] = rule ? [rule] : true;
+              } else if (userPermissions[code] !== true) {
+                if (!rule) {
+                  userPermissions[code] = true;
+                } else {
+                  const arr = userPermissions[code];
+                  if (Array.isArray(arr)) {
+                    arr.push(rule);
+                  }
+                }
+              }
+            }
+          });
         }
       });
 
       // Cache TTL from env (default 1 hour)
-      const ttl =
-        this.configService.get<number>('PERMISSION_CACHE_TTL') || 3600;
-      await this.redisClient.set(
-        cacheKey,
-        JSON.stringify(userPermissions),
-        'EX',
-        ttl,
-      );
+      const ttlStr = this.configService.get<string>('PERMISSION_CACHE_TTL');
+      const ttl = ttlStr ? parseInt(ttlStr, 10) : 3600;
+      try {
+        await this.redisClient.set(
+          cacheKey,
+          JSON.stringify(userPermissions),
+          'EX',
+          ttl,
+        );
+      } catch (err) {
+        this.logger.error(
+          `Failed to write permissions cache for user ${userId}`,
+          err,
+        );
+      }
     }
 
     const contextData = {
       user: request.user,
-      params: request.params,
-      query: request.query,
-      body: request.body,
+      params: (request.params as Record<string, unknown>) || {},
+      query: (request.query as Record<string, unknown>) || {},
+      body: (request.body as Record<string, unknown>) || {},
     };
 
     return requiredPermissions.every((permission) => {
@@ -108,9 +142,9 @@ export class PermissionsGuard implements CanActivate {
       // At least one rule must evaluate to true (OR logic across policies)
       return policy.some((ruleStr) => {
         try {
-          const ruleObj = JSON.parse(ruleStr);
+          const ruleObj = JSON.parse(ruleStr) as jsonLogic.RulesLogic;
           return jsonLogic.apply(ruleObj, contextData);
-        } catch (e) {
+        } catch {
           return false;
         }
       });

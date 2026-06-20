@@ -7,8 +7,9 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_role_audit_logs')
+@Entity(IamTables.ROLE_AUDIT_LOGS)
 export class RoleAuditLogEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

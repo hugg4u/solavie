@@ -5,11 +5,14 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { RoleEntity } from './role.entity';
 import { PermissionEntity } from './permission.entity';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_policies')
+@Entity(IamTables.POLICIES)
+@Index(['roleId', 'permissionId'], { unique: true })
 export class PolicyEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

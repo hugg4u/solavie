@@ -1,5 +1,6 @@
 import { Entity } from 'typeorm';
 import { BaseOutboxEntity } from '../../../core/outbox/outbox.entity';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_outbox_events')
+@Entity(IamTables.OUTBOX_EVENTS)
 export class IamOutboxEntity extends BaseOutboxEntity {}

@@ -6,10 +6,13 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { UserEntity } from './user.entity';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_device_histories')
+@Entity(IamTables.DEVICE_HISTORIES)
+@Index(['userId', 'deviceHash'], { unique: true })
 export class IamDeviceHistoryEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 
 import { UserEntity } from './entities/user.entity';
+import { UserSettingEntity } from './entities/user-setting.entity';
 import { RoleEntity } from './entities/role.entity';
 import { PermissionEntity } from './entities/permission.entity';
 import { UserRoleEntity } from './entities/user-role.entity';
@@ -11,10 +12,18 @@ import { PolicyEntity } from './entities/policy.entity';
 import { IamOutboxEntity } from './entities/iam-outbox.entity';
 import { RoleAuditLogEntity } from './entities/role-audit-log.entity';
 import { IamDeviceHistoryEntity } from './entities/device-history.entity';
+
+import { IamQueues } from './constants/iam.constants';
 import { APP_GUARD } from '@nestjs/core';
-import { AuthController } from './controllers/auth.controller';
+import { AuthController } from './controllers/v1/auth.controller';
 import { AuthService } from './services/auth.service';
 import { PermissionService } from './services/permission.service';
+import { RoleService } from './services/role.service';
+import { ProfileService } from './services/profile.service';
+import { UsersService } from './services/users.service';
+import { ProfileController } from './controllers/v1/profile.controller';
+import { UsersController } from './controllers/v1/users.controller';
+import { RolesController } from './controllers/v1/roles.controller';
 import { JwtStrategy } from './guards/jwt.strategy';
 import { IamOutboxWorker } from './workers/outbox.worker';
 import { IamOutboxProcessor } from './processors/outbox.processor';
@@ -26,6 +35,7 @@ import { BullModule } from '@nestjs/bullmq';
   imports: [
     TypeOrmModule.forFeature([
       UserEntity,
+      UserSettingEntity,
       RoleEntity,
       PermissionEntity,
       UserRoleEntity,
@@ -35,7 +45,7 @@ import { BullModule } from '@nestjs/bullmq';
       IamDeviceHistoryEntity,
     ]),
     BullModule.registerQueue({
-      name: 'iam_outbox',
+      name: IamQueues.OUTBOX,
     }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -50,6 +60,9 @@ import { BullModule } from '@nestjs/bullmq';
   providers: [
     AuthService,
     PermissionService,
+    RoleService,
+    ProfileService,
+    UsersService,
     JwtStrategy,
     IamOutboxWorker,
     IamOutboxProcessor,
@@ -62,7 +75,18 @@ import { BullModule } from '@nestjs/bullmq';
       useClass: PermissionsGuard,
     },
   ],
-  controllers: [AuthController],
-  exports: [TypeOrmModule, JwtModule],
+  controllers: [
+    AuthController,
+    ProfileController,
+    UsersController,
+    RolesController,
+  ],
+  exports: [
+    TypeOrmModule,
+    JwtModule,
+    RoleService,
+    PermissionService,
+    AuthService,
+  ],
 })
 export class IamModule {}

@@ -4,8 +4,9 @@ import {
   Column,
   CreateDateColumn,
 } from 'typeorm';
+import { IamTables } from '../constants/iam.constants';
 
-@Entity('iam_permissions')
+@Entity(IamTables.PERMISSIONS)
 export class PermissionEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
