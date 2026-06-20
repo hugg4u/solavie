@@ -15,9 +15,9 @@
 ## Phase 2: Security Event Notification Integration
 - `[ ]` **IamEventPayload DTOs:** Tạo các class `LoginNewDeviceEvent`, `PermissionChangedEvent` trong `iam/events/` chứa payload đầy đủ (userId, email, deviceInfo, ipAddress, changedBy, changeType, detail...).
 - `[x]` **Device Fingerprint Detection:** Trong `AuthService.login()`, thêm logic so sánh `(ip, user-agent)` với lịch sử đăng nhập (luu trong Redis hoặc DB). Nếu phát hiện thiết bị mới, emit sự kiện `auth.login_new_device`.
-- `[x]` **Emit auth.login_new_device:** Ghi sự kiện vào `iam_outbox_events` (có `eventId`) trong `AuthService.login()` chung với các tác vụ DB để gửi Email cảnh báo bảo mật.
-- `[ ]` **Emit permission.changed:** Trong `RoleService.assignRole()` và `PermissionService.updatePermissions()`, sau khi cập nhật DB và invalidate cache thành công, ghi `permission.changed` vào `iam_outbox_events` kèm `affectedUserId`, `changedBy`, `changeType`, `detail`.
-- `[x]` **IAM Outbox Processor & Sweeper:** Dựng BullMQ Processor xử lý realtime. Dựng Cronjob Sweeper (dùng `SKIP LOCKED`) định kỳ quét bảng `iam_outbox_events` (trạng thái PENDING) để publish bù vào BullMQ, sau đó đổi trạng thái thành PROCESSED.
+- `[x]` **Emit auth.login_new_device:** Ghi sự kiện vào `iam_outbox_events` (có `eventId`) trong `AuthService.login()` chung với các tác vụ DB để gửi Email cảnh báo bảo mật. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Emit permission.changed:** Trong `RoleService.assignRole()` và `PermissionService.updatePermissions()`, sau khi cập nhật DB và invalidate cache thành công, ghi `permission.changed` vào `iam_outbox_events` kèm `affectedUserId`, `changedBy`, `changeType`, `detail`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[x]` **IAM Outbox Processor & Sweeper:** Dựng BullMQ Processor xử lý realtime. Dựng Cronjob Sweeper (dùng `SKIP LOCKED`) định kỳ quét bảng `iam_outbox_events` (trạng thái PENDING) để publish bù vào BullMQ, sau đó đổi trạng thái thành PROCESSED. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - `[ ]` **Integration Tests:** Viết test kiểm tra:
   - Login từ IP mới → event `auth.login_new_device` được ghi vào Outbox.
   - Thay đổi role → Redis cache bị xóa → event `permission.changed` được ghi vào Outbox.
@@ -30,7 +30,7 @@
 - `[ ]` **Self-Service Change Password API:** Xây dựng endpoint `POST /api/v1/iam/users/me/change-password` cùng DTO `ChangePasswordDto` nhận `oldPassword` và `newPassword`.
 - `[ ]` **Re-authentication Verification:** Viết logic so khớp Bcrypt mật khẩu cũ của user.
 - `[ ]` **Session & Cache Revocation:** Triển khai thu hồi toàn bộ Refresh Tokens của user và xóa key `user:permissions:${userId}` trong Redis.
-- `[ ]` **Emit auth.password_changed:** Ghi event `auth.password_changed` vào bảng Outbox kèm metadata (userId, email, ip, userAgent) để gửi email bảo mật.
+- `[ ]` **Emit auth.password_changed:** Ghi event `auth.password_changed` vào bảng Outbox kèm metadata (userId, email, ip, userAgent) để gửi email bảo mật. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - `[ ]` **Unit & Integration Tests:** Viết test kiểm tra:
   - API cập nhật profile hoạt động đúng đắn, phản hồi đúng mã lỗi nếu sửa thông tin của tài khoản khác mà không có quyền Admin.
   - Đổi mật khẩu thành công (nhập đúng pass cũ), mật khẩu cũ không đúng báo lỗi 400.
@@ -40,7 +40,7 @@
 ## Phase 4: User Management (CRU) & Activation Flow
 - `[ ]` **CRU User Endpoints:** Xây dựng các API `POST /api/v1/iam/users`, `GET /api/v1/iam/users` (phân trang, bộ lọc), và `PATCH /api/v1/iam/users/:id` dành riêng cho Admin/Manager.
 - `[ ]` **Redis Hashing for Activation:** Trong API tạo user, sinh random token 32 bytes, lưu `SHA256(token)` vào Redis key `iam:activation:hash:${sha256}` với TTL = 24h.
-- `[ ]` **Emit auth.user_created:** Ghi sự kiện vào `iam_outbox_events` với Payload `UserCreatedEvent({ eventId, userId, userEmail, userName, activationToken, expireAt })`.
+- `[ ]` **Emit auth.user_created:** Ghi sự kiện vào `iam_outbox_events` với Payload `UserCreatedEvent({ eventId, userId, userEmail, userName, activationToken, expireAt })`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - `[ ]` **Token Exchange API:** Triển khai endpoint `POST /api/v1/iam/auth/exchange-activation-token`. Check token, xóa key trên Redis ngay lập tức (single-use), sinh ra SetupJWT có thời hạn 5 phút và lưu vào HTTP-Only cookie.
 - `[ ]` **Password Setup & Activation API:** Triển khai endpoint `POST /api/v1/iam/auth/activate` giải mã cookie SetupJWT, hash mật khẩu bằng Bcrypt và cập nhật DB, chuyển `is_active = true`.
 - `[ ]` **Resend Activation Link API:** Triển khai endpoint `POST /api/v1/iam/users/:id/resend-activation` cho phép Admin gửi lại mail kích hoạt.

@@ -12,11 +12,11 @@
 
 ## Phase B: Cập Nhật Specs Module Liên Quan (Transactional Outbox) ✅
 
-- [ ] **B1**: Cập nhật `specs/booking/requirement.md §2.5` — Refactor: Booking sử dụng Transactional Outbox để publish event.
-- [ ] **B2**: Cập nhật `specs/chatbot/requirement.md §2.5` — Ghi rõ ghi event `chat.handover_requested` vào Outbox.
-- [ ] **B3**: Cập nhật `specs/inbox/requirement.md §2.4` — Ghi rõ ghi event `inbox.agent_mentioned` vào Outbox.
-- [ ] **B4**: Cập nhật `specs/crm/requirement.md` — Thêm §2.9 về ghi events `lead.assigned`, `lead.score_hot` vào Outbox.
-- [ ] **B5**: Cập nhật `specs/iam/requirement.md` — Thêm §2.5 về ghi events `auth.login_new_device`, `permission.changed` vào Outbox.
+- [ ] **B1**: Cập nhật `specs/booking/requirement.md §2.5` — Refactor: Booking sử dụng Transactional Outbox để publish event. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **B2**: Cập nhật `specs/chatbot/requirement.md §2.5` — Ghi rõ ghi event `chat.handover_requested` vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **B3**: Cập nhật `specs/inbox/requirement.md §2.4` — Ghi rõ ghi event `inbox.agent_mentioned` vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **B4**: Cập nhật `specs/crm/requirement.md` — Thêm §2.9 về ghi events `lead.assigned`, `lead.score_hot` vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **B5**: Cập nhật `specs/iam/requirement.md` — Thêm §2.5 về ghi events `auth.login_new_device`, `permission.changed` vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 
 ## Phase C: Triển Khai Mã Nguồn
 
@@ -27,7 +27,7 @@
 - [ ] **C1.4**: Tạo repositories tương ứng
 
 ### C.2 — Core Services
-- [ ] **C2.1**: Implement `IdempotencyService` (SHA256 key generation + DB check)
+- [ ] **C2.1**: Implement `IdempotencyService` (SHA256 key generation + DB check) [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **C2.2**: Implement `PreferenceService` (lookup + quiet hours check + event override check)
 - [ ] **C2.3**: Implement `TemplateEngineService` (Handlebars renderer + template lookup)
 - [ ] **C2.4**: Implement `NotificationRouter` (fan-out logic + channel decision matrix)
@@ -61,14 +61,14 @@ Thay vì sử dụng `EventEmitter` nội bộ cục bộ, Notification Module s
 
 ## Phase D: Kiểm Thử & Nghiệm Thu
 
-- [ ] **D1**: Unit test `IdempotencyService` — duplicate detection
+- [ ] **D1**: Unit test `IdempotencyService` — duplicate detection [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **D2**: Unit test `PreferenceService` — quiet hours, opt-out, event override
 - [ ] **D3**: Unit test `TemplateEngineService` — Handlebars rendering với biến động
 - [ ] **D4**: Unit test `NotificationRouter` — fan-out logic cho từng event type
 - [ ] **D5**: Integration test: `appointment.confirmed` event → 2 Email jobs + 1 Zalo job enqueued + 2 Scheduled jobs
 - [ ] **D6**: Integration test: `appointment.cancelled` → scheduled jobs bị hủy + cancellation notification gửi
 - [ ] **D7**: Integration test: `chat.handover_requested` → In-App WebSocket delivery < 500ms
-- [ ] **D8**: Test Idempotency: cùng event gửi 2 lần → chỉ 1 notification delivered
+- [ ] **D8**: Test Idempotency: cùng event gửi 2 lần → chỉ 1 notification delivered [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **D9**: Test DLQ: EmailProvider throw exception 3 lần → job vào DLQ + log FAILED
 - [ ] **D10**: Test Zalo Fallback: `zalo_user_id = null` → tự động chuyển gửi Email
 - [ ] **D11**: Test Quiet Hours: Email bị chặn trong giờ cấm → In-App vẫn hoạt động

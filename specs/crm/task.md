@@ -19,9 +19,9 @@
 
 ## Phase 3: Event-Driven Notification Integration
 - `[ ]` **CrmEventPayload DTOs:** Tạo các class Payload cho từng loại sự kiện CRM (`LeadAssignedEvent`, `LeadScoreHotEvent`, `LeadStatusChangedEvent`, `CustomerNoteMentionedEvent`) trong `crm/events/`, yêu cầu bắt buộc có thuộc tính `eventId: string`.
-- `[ ]` **Ghi outbox lead.assigned:** Trong `LeadService.assignLead()`, cùng một DB transaction, ghi vào bảng `crm_outbox_events` loại sự kiện `lead.assigned` bao gồm `eventId`, `leadId`, `leadName`, `leadPhone`, `assigneeId`, `assigneeEmail`.
-- `[ ]` **Ghi outbox lead.score_hot:** Trong `ScoringEngineService`, khi tính toán xét Lead đạt ngưỡng `score >= HOT_THRESHOLD`, ghi sự kiện `lead.score_hot` vào `crm_outbox_events`.
-- `[ ]` **Ghi outbox lead.status_changed:** Trong `PipelineService.moveLeadToStage()`, ghi sự kiện `lead.status_changed` vào `crm_outbox_events`.
-- `[ ]` **Ghi outbox customer.note_mentioned:** Trong `CustomerNoteService.createNote()`, trích xuất `@username` bằng Regex, tìm `userId` và ghi vào `crm_outbox_events` loại `customer.note_mentioned`.
-- `[ ]` **CRM Outbox Sweeper:** Dựng Cronjob hoặc BullMQ Sweeper quét định kỳ (dùng SKIP LOCKED) bảng `crm_outbox_events` (trạng thái PENDING) để publish vào Event Bus.
-- `[ ]` **Integration Tests:** Viết test kiểm tra tất cả 4 events được ghi đúng vào Outbox thay vì phát thẳng ra ngoài khi business logic tương ứng được gọi.
+- `[ ]` **Ghi outbox lead.assigned:** Trong `LeadService.assignLead()`, cùng một DB transaction, ghi vào bảng `crm_outbox_events` loại sự kiện `lead.assigned` bao gồm `eventId`, `leadId`, `leadName`, `leadPhone`, `assigneeId`, `assigneeEmail`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Ghi outbox lead.score_hot:** Trong `ScoringEngineService`, khi tính toán xét Lead đạt ngưỡng `score >= HOT_THRESHOLD`, ghi sự kiện `lead.score_hot` vào `crm_outbox_events`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Ghi outbox lead.status_changed:** Trong `PipelineService.moveLeadToStage()`, ghi sự kiện `lead.status_changed` vào `crm_outbox_events`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Ghi outbox customer.note_mentioned:** Trong `CustomerNoteService.createNote()`, trích xuất `@username` bằng Regex, tìm `userId` và ghi vào `crm_outbox_events` loại `customer.note_mentioned`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **CRM Outbox Sweeper:** Dựng Cronjob hoặc BullMQ Sweeper quét định kỳ (dùng SKIP LOCKED) bảng `crm_outbox_events` (trạng thái PENDING) để publish vào Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Integration Tests:** Viết test kiểm tra tất cả 4 events được ghi đúng vào Outbox thay vì phát thẳng ra ngoài khi business logic tương ứng được gọi. [Tham khảo Outbox Spec](../system_outbox_pattern.md)

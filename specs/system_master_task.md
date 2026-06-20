@@ -61,8 +61,8 @@
 - [x] **SYS-BOOT-08:** Cấu hình Global `ValidationPipe`, `GlobalExceptionFilter`, `TraceIdInterceptor`
 - [x] **SYS-BOOT-09:** Cài đặt và cấu hình Helmet, CORS (chỉ allow portal domain)
 - [x] **SYS-BOOT-10:** Cài đặt Rate Limiter global (`@nestjs/throttler` + Redis store)
-- [x] **SYS-BOOT-11:** Cài đặt Global Idempotency Guard/Interceptor (`eventId` checker)
-- [x] **SYS-BOOT-12:** Thiết lập kiến trúc Core Outbox (BaseOutboxEntity) và cấu hình BullMQ.
+- [x] **SYS-BOOT-11:** Cài đặt Global Idempotency Guard/Interceptor (`eventId` checker) [Tham khảo Inbox Pattern Spec](system_inbox_pattern.md)
+- [x] **SYS-BOOT-12:** Thiết lập kiến trúc Core Outbox (BaseOutboxEntity) và cấu hình BullMQ. [Tham khảo Outbox Spec](system_outbox_pattern.md)
 
 ---
 
@@ -127,9 +127,9 @@
 
 - `[ ]` **IAM-11:** Event DTOs: `LoginNewDeviceEvent`, `PermissionChangedEvent`, `UserCreatedEvent`, `PasswordChangedEvent`
 - `[x]` **IAM-12:** Device Fingerprint Detection — so sánh `(ip, user-agent)` → emit `auth.login_new_device`
-- `[x]` **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()`
-- `[ ]` **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update
-- `[x]` **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ.
+- `[x]` **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()` [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- `[ ]` **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- `[x]` **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ. [Tham khảo Outbox Spec](system_outbox_pattern.md)
 - `[ ]` **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
 
 ### Phase 3: Profile & Password Settings
@@ -164,8 +164,8 @@
 - [ ] **GW-05:** Parser & Mapper — transform FB/Zalo JSON → `UnifiedMessage` interface
 - [ ] **GW-06:** BullMQ Integration — setup kết nối `REDIS_QUEUE_URL`
 - [ ] **GW-07:** BullMQ Producer — đẩy `UnifiedMessage` vào queue, HTTP 200 < 200ms
-- [ ] **GW-08:** Migration + Entity `gw_incoming_events` (Outbox pattern)
-- [ ] **GW-09:** Hybrid Outbox Logic — DB Transaction nhận webhook + save outbox + push queue ngay lập tức.
+- [ ] **GW-08:** Migration + Entity `gw_incoming_events` (Outbox pattern) [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **GW-09:** Hybrid Outbox Logic — DB Transaction nhận webhook + save outbox + push queue ngay lập tức. [Tham khảo Outbox Spec](system_outbox_pattern.md)
 - [ ] **GW-10:** `GatewayCryptoService` — AES-256-GCM encrypt/decrypt API keys
 - [x] **GW-11:** Redis Isolation Config — `REDIS_CACHE_URL` + `REDIS_QUEUE_URL` (→ DevOps task DEV-05/06)
 - [ ] **GW-12:** Background Recovery Worker — `@Interval` scan `gw_incoming_events` status `PENDING` → retry
@@ -284,12 +284,12 @@
 ### Phase 3: Event-Driven Notification Integration
 
 - [ ] **CRM-17:** Event DTOs (có `eventId`): `LeadAssignedEvent`, `LeadScoreHotEvent`, `LeadStatusChangedEvent`, `CustomerNoteMentionedEvent`
-- [ ] **CRM-18:** Ghi outbox `lead.assigned` trong `LeadService.assignLead()` transaction
-- [ ] **CRM-19:** Ghi outbox `lead.score_hot` trong `ScoringEngineService` khi score ≥ HOT_THRESHOLD
-- [ ] **CRM-20:** Ghi outbox `lead.status_changed` trong `PipelineService.moveLeadToStage()`
-- [ ] **CRM-21:** Ghi outbox `customer.note_mentioned` — extract `@username` Regex + find userId
-- [ ] **CRM-22:** CRM Outbox Sweeper — Cronjob quét `crm_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ.
-- [ ] **CRM-23:** Integration tests: 4 events emit đúng payload qua Outbox
+- [ ] **CRM-18:** Ghi outbox `lead.assigned` trong `LeadService.assignLead()` transaction [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **CRM-19:** Ghi outbox `lead.score_hot` trong `ScoringEngineService` khi score ≥ HOT_THRESHOLD [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **CRM-20:** Ghi outbox `lead.status_changed` trong `PipelineService.moveLeadToStage()` [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **CRM-21:** Ghi outbox `customer.note_mentioned` — extract `@username` Regex + find userId [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **CRM-22:** CRM Outbox Sweeper — Cronjob quét `crm_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ. [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **CRM-23:** Integration tests: 4 events emit đúng payload qua Outbox [Tham khảo Outbox Spec](system_outbox_pattern.md)
 
 ---
 
@@ -364,9 +364,9 @@
 ### Phase 4: Event-Driven Notification Integration
 
 - [ ] **BK-12:** Event classes `AppointmentConfirmedEvent`, `AppointmentCancelledEvent` (chứa `eventId`)
-- [ ] **BK-13:** Ghi outbox `appointment.confirmed` sau `commitTransaction()` thành công
-- [ ] **BK-14:** Ghi outbox `appointment.cancelled` khi hủy/dời lịch
-- [ ] **BK-15:** Booking Outbox Sweeper — Cronjob quét `booking_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ.
+- [ ] **BK-13:** Ghi outbox `appointment.confirmed` sau `commitTransaction()` thành công [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **BK-14:** Ghi outbox `appointment.cancelled` khi hủy/dời lịch [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [ ] **BK-15:** Booking Outbox Sweeper — Cronjob quét `booking_outbox_events` PENDING (dùng `SKIP LOCKED`) và publish vào BullMQ. [Tham khảo Outbox Spec](system_outbox_pattern.md)
 - [ ] **BK-16:** Xóa `ReminderScheduler` cũ (nếu có), remove BullMQ dependency khỏi `BookingModule`
 
 ### Phase 5: AI Chatbot Integration
@@ -416,7 +416,7 @@
 - [ ] **NOT-C4:** Repositories tương ứng
 
 **C.2 — Core Services:**
-- [ ] **NOT-C5:** `IdempotencyService` — SHA256 key generation + DB check (chống gửi trùng)
+- [ ] **NOT-C5:** `IdempotencyService` — SHA256 key generation + DB check (chống gửi trùng) [Tham khảo Inbox Pattern Spec](system_inbox_pattern.md)
 - [ ] **NOT-C6:** `PreferenceService` — lookup preference + quiet hours + event override check
 - [ ] **NOT-C7:** `TemplateEngineService` — Handlebars renderer + template lookup (event_type, channel, language)
 - [ ] **NOT-C8:** `NotificationRouter` — fan-out logic, channel decision matrix
@@ -453,14 +453,14 @@
 
 ### Phase D: Kiểm Thử & Nghiệm Thu
 
-- [ ] **NOT-D1:** Unit test `IdempotencyService` — duplicate detection
+- [ ] **NOT-D1:** Unit test `IdempotencyService` — duplicate detection [Tham khảo Inbox Pattern Spec](system_inbox_pattern.md)
 - [ ] **NOT-D2:** Unit test `PreferenceService` — quiet hours, opt-out, event override
 - [ ] **NOT-D3:** Unit test `TemplateEngineService` — Handlebars variables
 - [ ] **NOT-D4:** Unit test `NotificationRouter` — fan-out logic từng event type
 - [ ] **NOT-D5:** Integration test: `appointment.confirmed` → 2 Email + 1 Zalo + 2 Scheduled jobs
 - [ ] **NOT-D6:** Integration test: `appointment.cancelled` → hủy scheduled jobs + gửi thông báo hủy
 - [ ] **NOT-D7:** Integration test: `chat.handover_requested` → In-App WebSocket < 500ms
-- [ ] **NOT-D8:** Idempotency test: cùng event gửi 2 lần → chỉ 1 notification delivered
+- [ ] **NOT-D8:** Idempotency test: cùng event gửi 2 lần → chỉ 1 notification delivered [Tham khảo Inbox Pattern Spec](system_inbox_pattern.md)
 - [ ] **NOT-D9:** DLQ test: EmailProvider fail 3 lần → job vào DLQ + log FAILED
 - [ ] **NOT-D10:** Zalo Fallback test: `zalo_user_id=null` → auto email
 - [ ] **NOT-D11:** Quiet Hours test: Email blocked → In-App vẫn gửi

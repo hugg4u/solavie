@@ -3,7 +3,7 @@
 Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5 Phase triển khai tuần tự theo thực tiễn tốt nhất (Best Practice):
 
 ## Phase 1: Setup Infrastructure & Base LLM Engine
-- [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics`, bảng `chatbot_outbox_events` (cho Transactional Outbox) và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`.
+- [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics`, bảng `chatbot_outbox_events` (cho Transactional Outbox) và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [x] **LLM Gateway (LiteLLM):** Cấu hình container LiteLLM (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
 - [ ] **LLM Base Adapter:** Khai báo Interface `BaseLLMAdapter` trong NestJS.
 - [ ] **OpenAI Compatible Client:** Triển khai class adapter kết nối tới LiteLLM sử dụng OpenAI SDK, hỗ trợ nạp động API Key từ Header.
@@ -41,10 +41,10 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Redis Isolation Config:** Cấu hình kết nối chatbot queue tới `REDIS_QUEUE_URL` chuyên dụng (maxmemory-policy `noeviction`) để tránh mất job.
 - [ ] **BullMQ Shared Connection & Cleanup Config:** Triển khai instance `ioredis` dùng chung cho Chatbot module để chia sẻ kết nối, cấu hình dọn dẹp job tự động (`removeOnComplete`, `removeOnFail`) và cơ chế retry backoff cho debounce và follow-up queues.
 - [ ] **Migration Add Customer ID:** Tạo file migration thêm cột `customer_id` (UUID, soft link) vào bảng `chat_conversations`.
-- [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`.
+- [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Handover Message Logic:** Triển khai `ChatbotHandoverService` tự động gửi tin nhắn phản hồi lịch sự ngay lập tức khi chuyển chế độ sang `MANUAL`. (Tin nhắn này gửi ra ngoài cho khách qua Facebook/Zalo API — khác với notification nội bộ cho Sales.)
-- [ ] **Handback API Implementation:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm guard phân quyền `chat:write` và bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate).
-- [ ] **Chatbot Outbox Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus.
+- [ ] **Handback API Implementation:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm guard phân quyền `chat:write` và bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate). [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
+- [ ] **Chatbot Outbox Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 
 ## Phase 5: Centralized Logging, Sync Job & Monitoring
 - [ ] **Structured Logging:** Cấu hình Winston Logger để ghi log dạng JSON ra stdout phục vụ Promtail scrape.
@@ -67,5 +67,5 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
   - State chuyển thành `MANUAL` trong DB.
   - Tin nhắn cầu lịch sự được gửi ra ngoài cho khách.
   - Sự kiện `chat.handover_requested` được lưu vào `chatbot_outbox_events`.
-- [ ] **Idempotency Integration Tests:** Kiểm tra các API POST admin và handback xử lý đúng khi trùng `Idempotency-Key`.
+- [ ] **Idempotency Integration Tests:** Kiểm tra các API POST admin và handback xử lý đúng khi trùng `Idempotency-Key`. [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **No Duplicate Notification Test:** Kiểm tra Chatbot Module không tự gửi WebSocket trực tiếp cho Sales (chức năng đó thuộc Notification Module).

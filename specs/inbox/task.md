@@ -36,7 +36,7 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
   - Triển khai endpoint `POST /api/v1/inbox/conversations/:id/comments`.
   - Lưu ghi chú vào bảng `inbox_internal_comments`.
   - Trích xuất tags `@username` từ nội dung comment bằng Regex. Tìm `userId` tương ứng và ghi bản ghi `inbox.agent_mentioned` vào bảng `inbox_outbox_events` (có `eventId`) trong cùng DB Transaction. Không bắn WebSocket event trực tiếp từ Inbox Module.
-- [ ] **Inbox Outbox Processor & Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper (dùng `SKIP LOCKED`) quét định kỳ bảng `inbox_outbox_events` và publish ra Event Bus.
+- [ ] **Inbox Outbox Processor & Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper (dùng `SKIP LOCKED`) quét định kỳ bảng `inbox_outbox_events` và publish ra Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Quick Replies API:** Triển khai endpoint `GET /api/v1/inbox/quick-replies` để lấy các mẫu câu trả lời nhanh đã cấu hình sẵn.
 
 ## Phase 4: Round-Robin Auto-Routing Implementation
@@ -52,5 +52,5 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
 ## Phase 5: Automated Testing & Verification
 - [ ] **Unit Tests for Assignment:** Viết test suite cho `AutoAssignmentService` giả lập các kịch bản không có sales online, xoay vòng tuần tự khi có nhiều sales online.
 - [ ] **WebSocket Gateway Tests:** Viết integration tests cho `InboxGateway` để kiểm tra cơ chế ghi nhớ lock gõ phím trên Redis, tự động hết hạn lock sau 5 giây và đồng bộ sự kiện typing.
-- [ ] **Internal Comment Tagging Tests:** Viết unit tests kiểm chứng khả năng trích xuất tên chính xác bằng Regex từ ghi chú nội bộ và kiểm tra sự kiện `inbox.agent_mentioned` được ghi đúng vào Outbox.
+- [ ] **Internal Comment Tagging Tests:** Viết unit tests kiểm chứng khả năng trích xuất tên chính xác bằng Regex từ ghi chú nội bộ và kiểm tra sự kiện `inbox.agent_mentioned` được ghi đúng vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Handover Event Tests:** Viết unit test kiểm tra khi Auto-Routing gán Sales, event `inbox.new_message` được emit cho đúng `assigneeId`.

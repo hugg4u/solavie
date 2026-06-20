@@ -223,6 +223,7 @@ specs/
 ├── system_events.md            ← Event Registry chi tiết toàn hệ thống
 ├── system_redis_keys.md        ← Toàn bộ Redis key patterns
 ├── system_api_conventions.md   ← Quy chuẩn API response/error toàn hệ thống
+├── system_outbox_pattern.md    ← Kiến trúc và khuôn mẫu Transactional Outbox Pattern
 │
 ├── gateway/                    ← Module Gateway & LLM Routing
 ├── chatbot/                    ← Module AI Chatbot & RAG

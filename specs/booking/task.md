@@ -18,7 +18,7 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 
 ## Phase 3: Booking & CRM Synchronization
 - [ ] **Appointment Booking API:** Triển khai API `POST /api/v1/booking/appointments` cho phép đặt lịch hẹn.
-- [ ] **Idempotency Guard:** Bổ sung cơ chế check `Idempotency-Key` qua Redis cho API Booking để tránh người dùng click đúp sinh lịch hẹn trùng lặp.
+- [ ] **Idempotency Guard:** Bổ sung cơ chế check `Idempotency-Key` qua Redis cho API Booking để tránh người dùng click đúp sinh lịch hẹn trùng lặp. [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **Round-Robin Host Allocation:** Tích hợp logic tự động gán Sales Rep xoay vòng dựa trên Redis pointer nếu khách không chỉ định Sales trực tiếp.
 - [ ] **CRM Customer Sync:** Triển khai logic tự động tìm hoặc tạo hồ sơ khách hàng `crm_customers` khi đặt lịch thành công, tự động gán `assignee_id` cho Sales host.
 - [ ] **CRM Activity Timeline Logging:** Tự động ghi nhận log hoạt động loại `APPOINTMENT_SCHEDULED` vào timeline `crm_activities` của khách hàng.
@@ -26,9 +26,9 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 
 ## Phase 4: Event-Driven Notification Integration
 - [ ] **AppointmentConfirmedEvent Class:** Tạo class `AppointmentConfirmedEvent` và `AppointmentCancelledEvent` trong `booking/events/` chứa đầy đủ payload (eventId, salesInfo, customerInfo, meetLink, locationType).
-- [ ] **Ghi outbox appointment.confirmed:** Sau khi thao tác thành công, ghi bản ghi vào `booking_outbox_events` loại `appointment.confirmed` với payload.
-- [ ] **Ghi outbox appointment.cancelled:** Trong `cancelAppointment()` và `rescheduleAppointment()`, ghi sự kiện `appointment.cancelled` vào bảng Outbox kèm `cancelReason`.
-- [ ] **Booking Outbox Sweeper:** Dựng BullMQ Processor và Cronjob Sweeper quét `booking_outbox_events` định kỳ và đẩy ra Event Bus, đổi trạng thái sang PROCESSED.
+- [ ] **Ghi outbox appointment.confirmed:** Sau khi thao tác thành công, ghi bản ghi vào `booking_outbox_events` loại `appointment.confirmed` với payload. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **Ghi outbox appointment.cancelled:** Trong `cancelAppointment()` và `rescheduleAppointment()`, ghi sự kiện `appointment.cancelled` vào bảng Outbox kèm `cancelReason`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- [ ] **Booking Outbox Sweeper:** Dựng BullMQ Processor và Cronjob Sweeper quét `booking_outbox_events` định kỳ và đẩy ra Event Bus, đổi trạng thái sang PROCESSED. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Xóa ReminderScheduler Service:** Loại bỏ `ReminderScheduler` cũ (nếu đã viết), dọn dependencies BullMQ khỏi `BookingModule` vì giờ đây được quản lý bởi `NotificationModule`.
 - [ ] **Inject Sales Info:** Đảm bảo `AppointmentService` đã lookup và truyền `salesUser.full_name` và `salesUser.email` vào payload event (có thể query qua `IamUserRepository` qua soft link).
 
@@ -39,4 +39,4 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 ## Phase 6: Automated Testing & Verification
 - [ ] **Slots Calculation Tests:** Viết unit tests kiểm tra thuật toán tính giờ trống dưới các kịch bản trùng lịch bận Google Calendar, trùng lịch hẹn DB và vi phạm Buffer Time.
 - [ ] **Round-Robin Booking Tests:** Viết unit tests kiểm thử cơ chế xoay vòng phân bổ Sales khi nhiều khách book cùng lúc.
-- [ ] **Event Outbox Tests:** Viết integration test kiểm tra `appointment.confirmed` và `appointment.cancelled` được ghi đúng vào Outbox thay vì emit thẳng.
+- [ ] **Event Outbox Tests:** Viết integration test kiểm tra `appointment.confirmed` và `appointment.cancelled` được ghi đúng vào Outbox thay vì emit thẳng. [Tham khảo Outbox Spec](../system_outbox_pattern.md)

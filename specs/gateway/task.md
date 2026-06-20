@@ -7,8 +7,8 @@
 - `[ ]` **Parser & Mapper:** Viết logic transform các format JSON dị biệt của FB/Zalo về chuẩn `UnifiedMessage` interface.
 - `[ ]` **Redis BullMQ Integration:** Setup cấu hình kết nối Redis.
 - `[ ]` **Producer implementation:** Đẩy `UnifiedMessage` vào Queue và test độ trễ phản hồi HTTP 200.
-- `[ ]` **Outbox Migration & Entity:** Tạo migration và Entity cho bảng `gw_incoming_events` làm Durability Store.
-- `[ ]` **Outbox Transaction Logic:** Viết logic NestJS bọc luồng webhook nhận tin nhắn trong DB Transaction, ghi event và push queue an toàn.
+- `[ ]` **Outbox Migration & Entity:** Tạo migration và Entity cho bảng `gw_incoming_events` làm Durability Store. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[ ]` **Outbox Transaction Logic:** Viết logic NestJS bọc luồng webhook nhận tin nhắn trong DB Transaction, ghi event và push queue an toàn. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - `[ ]` **Crypto Service (AES-256-GCM):** Xây dựng `GatewayCryptoService` mã hóa/giải mã API Keys và Page Access Tokens.
 - `[ ]` **Background Recovery Worker:** Triển khai background worker `@Interval` tự động quét các tin nhắn `PENDING` bị kẹt để gửi lại.
 - `[x]` **Redis Isolation Config:** Cấu hình 2 biến môi trường `REDIS_CACHE_URL` và `REDIS_QUEUE_URL` tách biệt, thiết lập Docker-compose (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
