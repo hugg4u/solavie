@@ -46,21 +46,27 @@ export class IamSeedService implements OnApplicationBootstrap {
    */
   private async syncPermissions() {
     const codePermissions = Object.values(ALL_SYSTEM_PERMISSIONS);
-    
+
     // Đọc permissions hiện có trong DB
     const dbPermissions = await this.permissionRepo.find();
-    const dbActionList = dbPermissions.map(p => p.action);
+    const dbActionList = dbPermissions.map((p) => p.action);
 
     // Lọc ra các permissions mới trong code chưa có trong DB
-    const newPermissions = codePermissions.filter(p => !dbActionList.includes(p));
+    const newPermissions = codePermissions.filter(
+      (p) => !dbActionList.includes(p),
+    );
 
     if (newPermissions.length > 0) {
-      const entities = newPermissions.map(p => this.permissionRepo.create({
-        action: p,
-        description: `Auto-generated permission for action: ${p}`
-      }));
+      const entities = newPermissions.map((p) =>
+        this.permissionRepo.create({
+          action: p,
+          description: `Auto-generated permission for action: ${p}`,
+        }),
+      );
       await this.permissionRepo.save(entities);
-      this.logger.log(`Auto-synced: Added ${newPermissions.length} new permissions to DB.`);
+      this.logger.log(
+        `Auto-synced: Added ${newPermissions.length} new permissions to DB.`,
+      );
     }
   }
 
@@ -69,14 +75,32 @@ export class IamSeedService implements OnApplicationBootstrap {
    */
   private async seedDefaultRoles() {
     const defaultRoles = [
-      { code: 'SUPER_ADMIN', name: 'Super Administrator', description: 'Tài khoản tối cao bypass mọi kiểm tra quyền' },
-      { code: 'ADMIN', name: 'Administrator', description: 'Quản trị viên vận hành hệ thống' },
-      { code: 'MANAGER', name: 'Manager', description: 'Quản lý vận hành dự án & kinh doanh' },
-      { code: 'SALES', name: 'Sales Representative', description: 'Nhân viên tư vấn kinh doanh' },
+      {
+        code: 'SUPER_ADMIN',
+        name: 'Super Administrator',
+        description: 'Tài khoản tối cao bypass mọi kiểm tra quyền',
+      },
+      {
+        code: 'ADMIN',
+        name: 'Administrator',
+        description: 'Quản trị viên vận hành hệ thống',
+      },
+      {
+        code: 'MANAGER',
+        name: 'Manager',
+        description: 'Quản lý vận hành dự án & kinh doanh',
+      },
+      {
+        code: 'SALES',
+        name: 'Sales Representative',
+        description: 'Nhân viên tư vấn kinh doanh',
+      },
     ];
 
     for (const roleDef of defaultRoles) {
-      const existing = await this.roleRepo.findOne({ where: { code: roleDef.code } });
+      const existing = await this.roleRepo.findOne({
+        where: { code: roleDef.code },
+      });
       if (!existing) {
         const newRole = this.roleRepo.create(roleDef);
         await this.roleRepo.save(newRole);
@@ -94,7 +118,9 @@ export class IamSeedService implements OnApplicationBootstrap {
     const password = this.configService.get<string>('SUPER_ADMIN_PASSWORD');
 
     if (!id || !email || !password) {
-      this.logger.warn('Super Admin configuration missing in environment variables. Seeding bypassed.');
+      this.logger.warn(
+        'Super Admin configuration missing in environment variables. Seeding bypassed.',
+      );
       return;
     }
 
@@ -119,9 +145,13 @@ export class IamSeedService implements OnApplicationBootstrap {
       const roleRepoTrans = manager.getRepository(RoleEntity);
 
       // Lấy role SUPER_ADMIN
-      const superAdminRole = await roleRepoTrans.findOne({ where: { code: 'SUPER_ADMIN' } });
+      const superAdminRole = await roleRepoTrans.findOne({
+        where: { code: 'SUPER_ADMIN' },
+      });
       if (!superAdminRole) {
-        throw new Error('SUPER_ADMIN role must exist before seeding super admin user.');
+        throw new Error(
+          'SUPER_ADMIN role must exist before seeding super admin user.',
+        );
       }
 
       // Insert User mới
@@ -150,7 +180,9 @@ export class IamSeedService implements OnApplicationBootstrap {
    * Đảm bảo tài khoản Super Admin luôn được gán Role SUPER_ADMIN
    */
   private async ensureSuperAdminRoleMapping(userId: string) {
-    const superAdminRole = await this.roleRepo.findOne({ where: { code: 'SUPER_ADMIN' } });
+    const superAdminRole = await this.roleRepo.findOne({
+      where: { code: 'SUPER_ADMIN' },
+    });
     if (!superAdminRole) return;
 
     const existingMapping = await this.userRoleRepo.findOne({
@@ -173,16 +205,22 @@ export class IamSeedService implements OnApplicationBootstrap {
    */
   private async seedRolePolicies() {
     const allPermissions = await this.permissionRepo.find();
-    const permMap = new Map(allPermissions.map(p => [p.action, p]));
+    const permMap = new Map(allPermissions.map((p) => [p.action, p]));
 
     const adminRole = await this.roleRepo.findOne({ where: { code: 'ADMIN' } });
-    const managerRole = await this.roleRepo.findOne({ where: { code: 'MANAGER' } });
+    const managerRole = await this.roleRepo.findOne({
+      where: { code: 'MANAGER' },
+    });
     const salesRole = await this.roleRepo.findOne({ where: { code: 'SALES' } });
 
     // ADMIN có tất cả mọi quyền trong hệ thống
     if (adminRole) {
-      const adminPermActions = allPermissions.map(p => p.action);
-      await this.assignPermissionsToRole(adminRole.id, adminPermActions, permMap);
+      const adminPermActions = allPermissions.map((p) => p.action);
+      await this.assignPermissionsToRole(
+        adminRole.id,
+        adminPermActions,
+        permMap,
+      );
     }
 
     // MANAGER có quyền xem/sửa người dùng, xem roles & permissions
@@ -192,21 +230,31 @@ export class IamSeedService implements OnApplicationBootstrap {
         'iam.users.create',
         'iam.users.update',
         'iam.roles.read',
-        'iam.permissions.read'
+        'iam.permissions.read',
       ];
-      await this.assignPermissionsToRole(managerRole.id, managerPermActions, permMap);
+      await this.assignPermissionsToRole(
+        managerRole.id,
+        managerPermActions,
+        permMap,
+      );
     }
 
     // SALES chỉ có quyền xem thông tin người dùng
     if (salesRole) {
-      const salesPermActions = [
-        'iam.users.read'
-      ];
-      await this.assignPermissionsToRole(salesRole.id, salesPermActions, permMap);
+      const salesPermActions = ['iam.users.read'];
+      await this.assignPermissionsToRole(
+        salesRole.id,
+        salesPermActions,
+        permMap,
+      );
     }
   }
 
-  private async assignPermissionsToRole(roleId: string, actions: string[], permMap: Map<string, PermissionEntity>) {
+  private async assignPermissionsToRole(
+    roleId: string,
+    actions: string[],
+    permMap: Map<string, PermissionEntity>,
+  ) {
     await this.dataSource.transaction(async (manager) => {
       const policyRepo = manager.getRepository(PolicyEntity);
 
@@ -215,17 +263,19 @@ export class IamSeedService implements OnApplicationBootstrap {
         if (!permission) continue;
 
         const existingPolicy = await policyRepo.findOne({
-          where: { roleId, permissionId: permission.id }
+          where: { roleId, permissionId: permission.id },
         });
 
         if (!existingPolicy) {
           const newPolicy = policyRepo.create({
             roleId,
             permissionId: permission.id,
-            ruleExpression: null // Quyền tĩnh RBAC mặc định
+            ruleExpression: null, // Quyền tĩnh RBAC mặc định
           });
           await policyRepo.save(newPolicy);
-          this.logger.log(`Mapped permission [${action}] to role ID [${roleId}]`);
+          this.logger.log(
+            `Mapped permission [${action}] to role ID [${roleId}]`,
+          );
         }
       }
     });

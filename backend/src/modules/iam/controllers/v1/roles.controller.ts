@@ -16,7 +16,12 @@ import {
 import { RoleService } from '../../services/role.service';
 import { RequirePermissions } from '../../decorators/permissions.decorator';
 import type { AuthenticatedRequest } from '../../interfaces/request.interface';
-import { CreateRoleDto, UpdateRoleDto, AssignPolicyDto, RoleListQueryDto } from '../../dto/role.dto';
+import {
+  CreateRoleDto,
+  UpdateRoleDto,
+  AssignPolicyDto,
+  RoleListQueryDto,
+} from '../../dto/role.dto';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('IAM Roles')
@@ -43,7 +48,12 @@ export class RolesController {
   @Post()
   @RequirePermissions('iam.roles.create')
   async create(@Body() dto: CreateRoleDto) {
-    const role = await this.roleService.createRole(dto.code, dto.name, dto.description, dto.permissionIds);
+    const role = await this.roleService.createRole(
+      dto.code,
+      dto.name,
+      dto.description,
+      dto.permissionIds,
+    );
     return {
       message: 'Role created successfully',
       id: role.id,
@@ -58,7 +68,11 @@ export class RolesController {
   @Patch(':code')
   @RequirePermissions('iam.roles.update')
   async update(@Param('code') code: string, @Body() dto: UpdateRoleDto) {
-    const role = await this.roleService.updateRole(code, dto.name, dto.description);
+    const role = await this.roleService.updateRole(
+      code,
+      dto.name,
+      dto.description,
+    );
     return {
       message: `Role ${code} updated successfully`,
       id: role.id,
@@ -85,7 +99,8 @@ export class RolesController {
     @Req() req: AuthenticatedRequest,
   ) {
     const adminId = req.user?.id;
-    if (!adminId) throw new UnauthorizedException('Admin ID not found in token');
+    if (!adminId)
+      throw new UnauthorizedException('Admin ID not found in token');
     const adminIp = req.ip || req.raw?.socket?.remoteAddress || 'unknown';
 
     await this.roleService.assignPolicyToRole(
@@ -109,10 +124,16 @@ export class RolesController {
     @Req() req: AuthenticatedRequest,
   ) {
     const adminId = req.user?.id;
-    if (!adminId) throw new UnauthorizedException('Admin ID not found in token');
+    if (!adminId)
+      throw new UnauthorizedException('Admin ID not found in token');
     const adminIp = req.ip || req.raw?.socket?.remoteAddress || 'unknown';
 
-    await this.roleService.removePolicyFromRole(roleCode, permissionId, adminId, adminIp);
+    await this.roleService.removePolicyFromRole(
+      roleCode,
+      permissionId,
+      adminId,
+      adminIp,
+    );
 
     return {
       message: `Policy successfully removed from role ${roleCode}`,
@@ -120,7 +141,7 @@ export class RolesController {
   }
 
   // ABSOLUTE ROUTING FOR USER-ROLE ASSIGNMENT (Tương thích ngược 100%)
-  
+
   @Post('/iam/users/:userId/roles/:roleCode')
   @HttpCode(HttpStatus.OK)
   @RequirePermissions('iam.roles.assign')
@@ -130,7 +151,8 @@ export class RolesController {
     @Req() req: AuthenticatedRequest,
   ) {
     const adminId = req.user?.id;
-    if (!adminId) throw new UnauthorizedException('Admin ID not found in token');
+    if (!adminId)
+      throw new UnauthorizedException('Admin ID not found in token');
     const adminIp = req.ip || req.raw?.socket?.remoteAddress || 'unknown';
 
     await this.roleService.assignRole(userId, roleCode, adminId, adminIp);
@@ -148,7 +170,8 @@ export class RolesController {
     @Req() req: AuthenticatedRequest,
   ) {
     const adminId = req.user?.id;
-    if (!adminId) throw new UnauthorizedException('Admin ID not found in token');
+    if (!adminId)
+      throw new UnauthorizedException('Admin ID not found in token');
     const adminIp = req.ip || req.raw?.socket?.remoteAddress || 'unknown';
 
     await this.roleService.removeRole(userId, roleCode, adminId, adminIp);

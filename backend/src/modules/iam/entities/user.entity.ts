@@ -20,7 +20,12 @@ export class UserEntity {
   @Column({ unique: true })
   email: string;
 
-  @Column({ name: 'password_hash', type: 'varchar', nullable: true, select: false })
+  @Column({
+    name: 'password_hash',
+    type: 'varchar',
+    nullable: true,
+    select: false,
+  })
   passwordHash: string | null;
 
   @Column({ name: 'full_name' })

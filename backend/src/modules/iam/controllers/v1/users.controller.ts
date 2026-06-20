@@ -112,7 +112,8 @@ export class UsersController {
 
     await this.usersService.resetPassword(id, adminId);
     return {
-      message: 'Password reset initiated successfully. User sessions revoked and reset link email is being sent.',
+      message:
+        'Password reset initiated successfully. User sessions revoked and reset link email is being sent.',
     };
   }
 }

@@ -8,16 +8,20 @@ export class ResourceHydratorRegistry {
 
   /**
    * Đăng ký một Hydrator mới với hệ thống.
-   * 
+   *
    * @param resourcePrefix Tiền tố nhận diện (ví dụ: 'crm.lead', 'booking.ticket')
    * @param hydrator Lớp thực thi ResourceHydrator
    */
   register(resourcePrefix: string, hydrator: ResourceHydrator): void {
     if (this.hydrators.has(resourcePrefix)) {
-      this.logger.warn(`ResourceHydrator for prefix "${resourcePrefix}" is being overwritten!`);
+      this.logger.warn(
+        `ResourceHydrator for prefix "${resourcePrefix}" is being overwritten!`,
+      );
     }
     this.hydrators.set(resourcePrefix, hydrator);
-    this.logger.log(`Registered ResourceHydrator for resource type: [${resourcePrefix}]`);
+    this.logger.log(
+      `Registered ResourceHydrator for resource type: [${resourcePrefix}]`,
+    );
   }
 
   /**

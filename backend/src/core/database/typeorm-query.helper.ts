@@ -3,35 +3,48 @@ import { PaginationQueryDto } from '../dto/pagination.dto';
 import { BadRequestException } from '@nestjs/common';
 
 export interface QueryHelperOptions {
-  alias: string;               // Alias của bảng chính trong query (ví dụ: 'user')
-  searchFields?: string[];     // Các trường văn bản cần áp dụng tìm kiếm (ví dụ: ['user.fullName', 'user.email'])
+  alias: string; // Alias của bảng chính trong query (ví dụ: 'user')
+  searchFields?: string[]; // Các trường văn bản cần áp dụng tìm kiếm (ví dụ: ['user.fullName', 'user.email'])
   filterableFields?: string[]; // Các trường hỗ trợ lọc chính xác bằng dấu bằng (ví dụ: ['isActive'])
 }
 
 export class TypeOrmQueryHelper {
   static apply<T extends ObjectLiteral>(
     queryBuilder: SelectQueryBuilder<T>,
-    queryDto: PaginationQueryDto & { search?: string; sort?: string; order?: string },
+    queryDto: PaginationQueryDto & {
+      search?: string;
+      sort?: string;
+      order?: string;
+    },
     options: QueryHelperOptions,
   ): void {
     const alias = options.alias;
 
     // 1. Áp dụng Tìm kiếm (Search) - Không phân biệt hoa thường
-    if (queryDto.search && options.searchFields && options.searchFields.length > 0) {
+    if (
+      queryDto.search &&
+      options.searchFields &&
+      options.searchFields.length > 0
+    ) {
       const conditions = options.searchFields
         .map((field) => `LOWER(${field}) LIKE LOWER(:search)`)
         .join(' OR ');
-      queryBuilder.andWhere(`(${conditions})`, { search: `%${queryDto.search.trim()}%` });
+      queryBuilder.andWhere(`(${conditions})`, {
+        search: `%${queryDto.search.trim()}%`,
+      });
     }
 
     // 2. Áp dụng Bộ lọc chính xác (Filter)
     if (options.filterableFields) {
       options.filterableFields.forEach((field) => {
-        const val = (queryDto as any)[field];
+        const val = (queryDto as unknown as Record<string, unknown>)[field];
         if (val !== undefined && val !== null && val !== '') {
           // Cast boolean dạng chuỗi từ query string
-          const castedVal = val === 'true' ? true : val === 'false' ? false : val;
-          queryBuilder.andWhere(`${alias}.${field} = :${field}`, { [field]: castedVal });
+          const castedVal: unknown =
+            val === 'true' ? true : val === 'false' ? false : val;
+          queryBuilder.andWhere(`${alias}.${field} = :${field}`, {
+            [field]: castedVal,
+          });
         }
       });
     }

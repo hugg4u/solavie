@@ -73,7 +73,13 @@ export class AuthService {
 
     const user = await this.userRepository.findOne({
       where: { email: dto.email, isActive: true },
-      select: { id: true, email: true, passwordHash: true, isActive: true, fullName: true },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        isActive: true,
+        fullName: true,
+      },
     });
     this.logger.debug(`[DEBUG] Fetched user: ${JSON.stringify(user)}`);
 

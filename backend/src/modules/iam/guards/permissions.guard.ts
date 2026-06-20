@@ -96,7 +96,9 @@ export class PermissionsGuard implements CanActivate {
       });
 
       // Kiểm tra nếu user có role SUPER_ADMIN
-      const hasSuperAdminRole = userRoles.some(ur => ur.role && ur.role.code === 'SUPER_ADMIN');
+      const hasSuperAdminRole = userRoles.some(
+        (ur) => ur.role && ur.role.code === 'SUPER_ADMIN',
+      );
       if (hasSuperAdminRole) {
         userPermissions['SUPER_ADMIN'] = true;
       }
@@ -149,10 +151,15 @@ export class PermissionsGuard implements CanActivate {
 
     // 3. Dynamic ABAC Resource Hydration
     let hydratedResource: Record<string, any> | null = null;
-    const params = request.params as Record<string, any> | undefined;
-    const body = request.body as Record<string, any> | undefined;
-    const query = request.query as Record<string, any> | undefined;
-    const resourceId = params?.id || body?.id || body?.resourceId || query?.id || query?.resourceId;
+    const params = request.params as Record<string, unknown> | undefined;
+    const body = request.body as Record<string, unknown> | undefined;
+    const query = request.query as Record<string, unknown> | undefined;
+    const resourceId =
+      params?.id ||
+      body?.id ||
+      body?.resourceId ||
+      query?.id ||
+      query?.resourceId;
 
     if (resourceId && typeof resourceId === 'string') {
       for (const permission of requiredPermissions) {
@@ -167,7 +174,10 @@ export class PermissionsGuard implements CanActivate {
                 break; // Tải thành công tài nguyên từ Hydrator đầu tiên phù hợp
               }
             } catch (err) {
-              this.logger.error(`Error hydrating resource ${resourceId} for prefix ${resourcePrefix}`, err);
+              this.logger.error(
+                `Error hydrating resource ${resourceId} for prefix ${resourcePrefix}`,
+                err,
+              );
             }
           }
         }

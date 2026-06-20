@@ -7,4 +7,5 @@ export const ALL_SYSTEM_PERMISSIONS = {
   // ...CrmPermissions,
 };
 
-export type SystemPermission = typeof ALL_SYSTEM_PERMISSIONS[keyof typeof ALL_SYSTEM_PERMISSIONS];
+export type SystemPermission =
+  (typeof ALL_SYSTEM_PERMISSIONS)[keyof typeof ALL_SYSTEM_PERMISSIONS];

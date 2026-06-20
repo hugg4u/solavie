@@ -54,9 +54,6 @@ import { ResourceHydratorRegistry } from './database/resource-hydrator.registry'
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
-  exports: [
-    ResourceHydratorRegistry,
-  ],
+  exports: [ResourceHydratorRegistry],
 })
 export class CoreModule {}
-

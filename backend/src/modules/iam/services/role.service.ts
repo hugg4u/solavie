@@ -49,7 +49,9 @@ export class RoleService {
   /**
    * Lấy danh sách Roles hỗ trợ tìm kiếm, sắp xếp, và phân trang
    */
-  async findAllRoles(query: RoleListQueryDto): Promise<PaginatedResponseDto<RoleEntity>> {
+  async findAllRoles(
+    query: RoleListQueryDto,
+  ): Promise<PaginatedResponseDto<RoleEntity>> {
     const page = query.page || 1;
     const limit = query.limit || 20;
 
@@ -91,11 +93,20 @@ export class RoleService {
   /**
    * Tạo mới một vai trò (Role) kèm gán danh sách permissions mặc định ban đầu
    */
-  async createRole(code: string, name: string, description?: string, permissionIds?: string[]): Promise<RoleEntity> {
+  async createRole(
+    code: string,
+    name: string,
+    description?: string,
+    permissionIds?: string[],
+  ): Promise<RoleEntity> {
     const uppercaseCode = code.toUpperCase().trim();
-    const existing = await this.roleRepository.findOne({ where: { code: uppercaseCode } });
+    const existing = await this.roleRepository.findOne({
+      where: { code: uppercaseCode },
+    });
     if (existing) {
-      throw new BadRequestException(`Role with code ${uppercaseCode} already exists`);
+      throw new BadRequestException(
+        `Role with code ${uppercaseCode} already exists`,
+      );
     }
 
     let savedRole: RoleEntity;
@@ -117,7 +128,9 @@ export class RoleService {
         for (const permId of permissionIds) {
           const perm = await permissionRepo.findOne({ where: { id: permId } });
           if (!perm) {
-            throw new NotFoundException(`Permission with ID ${permId} not found`);
+            throw new NotFoundException(
+              `Permission with ID ${permId} not found`,
+            );
           }
 
           const policy = policyRepo.create({
@@ -136,12 +149,18 @@ export class RoleService {
   /**
    * Cập nhật thông tin vai trò
    */
-  async updateRole(code: string, name?: string, description?: string): Promise<RoleEntity> {
+  async updateRole(
+    code: string,
+    name?: string,
+    description?: string,
+  ): Promise<RoleEntity> {
     const role = await this.findRoleByCode(code);
 
     // Chốt chặn bảo vệ Super Admin
     if (role.code === 'SUPER_ADMIN') {
-      throw new BadRequestException('SUPER_ADMIN role is immutable and cannot be updated.');
+      throw new BadRequestException(
+        'SUPER_ADMIN role is immutable and cannot be updated.',
+      );
     }
 
     if (name) role.name = name;
@@ -158,7 +177,9 @@ export class RoleService {
 
     // Chốt chặn bảo vệ Super Admin
     if (role.code === 'SUPER_ADMIN') {
-      throw new BadRequestException('SUPER_ADMIN role is immutable and cannot be deleted.');
+      throw new BadRequestException(
+        'SUPER_ADMIN role is immutable and cannot be deleted.',
+      );
     }
 
     // Kiểm tra xem có người dùng nào đang liên kết với role này hay không
@@ -189,14 +210,18 @@ export class RoleService {
 
     // Chốt chặn bảo vệ Super Admin
     if (role.code === 'SUPER_ADMIN') {
-      throw new BadRequestException('Policies for SUPER_ADMIN role are hardcoded and cannot be modified.');
+      throw new BadRequestException(
+        'Policies for SUPER_ADMIN role are hardcoded and cannot be modified.',
+      );
     }
 
     const permission = await this.permissionRepository.findOne({
       where: { id: permissionId },
     });
     if (!permission) {
-      throw new NotFoundException(`Permission with ID ${permissionId} not found`);
+      throw new NotFoundException(
+        `Permission with ID ${permissionId} not found`,
+      );
     }
 
     await this.dataSource.transaction(async (manager) => {
@@ -225,7 +250,11 @@ export class RoleService {
         userId: adminId,
         action: 'ASSIGN_POLICY',
         target: role.id,
-        payload: { roleCode, permissionAction: permission.action, ruleExpression },
+        payload: {
+          roleCode,
+          permissionAction: permission.action,
+          ruleExpression,
+        },
         ipAddress: adminIp,
       });
     });
@@ -247,14 +276,18 @@ export class RoleService {
 
     // Chốt chặn bảo vệ Super Admin
     if (role.code === 'SUPER_ADMIN') {
-      throw new BadRequestException('Policies for SUPER_ADMIN role are hardcoded and cannot be modified.');
+      throw new BadRequestException(
+        'Policies for SUPER_ADMIN role are hardcoded and cannot be modified.',
+      );
     }
 
     const permission = await this.permissionRepository.findOne({
       where: { id: permissionId },
     });
     if (!permission) {
-      throw new NotFoundException(`Permission with ID ${permissionId} not found`);
+      throw new NotFoundException(
+        `Permission with ID ${permissionId} not found`,
+      );
     }
 
     await this.dataSource.transaction(async (manager) => {
@@ -297,7 +330,9 @@ export class RoleService {
       await this.permissionService.invalidateUserPermissionCache(ur.userId);
     }
 
-    this.logger.debug(`Invalidated permissions cache for ${userRoles.length} users of role ${roleId}`);
+    this.logger.debug(
+      `Invalidated permissions cache for ${userRoles.length} users of role ${roleId}`,
+    );
   }
 
   /**

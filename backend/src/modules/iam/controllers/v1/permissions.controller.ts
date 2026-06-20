@@ -22,7 +22,9 @@ export class PermissionsController {
 
   @Get()
   @RequirePermissions('iam.permissions.read')
-  async findAll(@Query() query: PermissionListQueryDto): Promise<PaginatedResponseDto<PermissionEntity>> {
+  async findAll(
+    @Query() query: PermissionListQueryDto,
+  ): Promise<PaginatedResponseDto<PermissionEntity>> {
     const page = query.page || 1;
     const limit = query.limit || 20;
 

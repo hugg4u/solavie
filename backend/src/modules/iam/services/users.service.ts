@@ -436,7 +436,9 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     if (userId === adminId) {
-      throw new BadRequestException('Administrators cannot reset their own password.');
+      throw new BadRequestException(
+        'Administrators cannot reset their own password.',
+      );
     }
 
     const activationTokenPlain = crypto.randomBytes(32).toString('hex');
@@ -506,4 +508,3 @@ export class UsersService {
     }
   }
 }
-

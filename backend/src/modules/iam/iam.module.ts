@@ -33,7 +33,6 @@ import { PermissionsGuard } from './guards/permissions.guard';
 import { BullModule } from '@nestjs/bullmq';
 import { IamSeedService } from './services/iam-seed.service';
 
-
 @Module({
   imports: [
     TypeOrmModule.forFeature([
