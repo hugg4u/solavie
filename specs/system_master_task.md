@@ -114,40 +114,40 @@
 
 - `[x]` **IAM-01:** `AuthService` — login, Bcrypt verify, JWT access token (15m), Refresh Token (32 bytes random, Redis `iam:refresh_token:${token}`, TTL 7d)
 - `[x]` **IAM-02:** HttpOnly Cookie config cho `/login` và `/refresh` (Secure, SameSite=Strict)
-- `[/]` **IAM-03:** Refresh Token Rotation — thu hồi cũ, phát mới, Breach Detection (replay attack → revoke all sessions)
-- `[/]` **IAM-04:** `POST /api/v1/iam/auth/logout` — xóa Redis key, clear cookie, xóa permission cache
+- `[x]` **IAM-03:** Refresh Token Rotation — thu hồi cũ, phát mới, Breach Detection (replay attack → revoke all sessions)
+- `[x]` **IAM-04:** `POST /api/v1/iam/auth/logout` — xóa Redis key, clear cookie, xóa permission cache
 - `[x]` **IAM-05:** JWT Strategy (Passport) — validate `Authorization: Bearer <token>`
 - `[x]` **IAM-06:** `@RequirePermissions()` decorator + `PermissionsGuard`
-- `[ ]` **IAM-07:** Dynamic Policy Engine (ABAC) — eval biểu thức từ `iam_policies` (VD: `user.id == resource.assignee_id`)
+- `[x]` **IAM-07:** Dynamic Policy Engine (ABAC) — eval biểu thức từ `iam_policies` (VD: `user.id == resource.assignee_id`)
 - `[x]` **IAM-08:** Audit Interceptor — tự động ghi `iam_role_audit_logs` khi có thay đổi ghi/sửa
-- `[ ]` **IAM-09:** Permission Cache — `user:permissions:${userId}` (Redis `cache`, TTL 1h) + invalidation khi thay đổi quyền
+- `[x]` **IAM-09:** Permission Cache — `user:permissions:${userId}` (Redis `cache`, TTL 1h) + invalidation khi thay đổi quyền
 - `[x]` **IAM-10:** Brute-force protection — đếm sai/IP (`iam:brute_force:${ip}`), khóa 15p sau 10 lần sai
 
 ### Phase 2: Security Event Notification Integration
 
-- `[ ]` **IAM-11:** Event DTOs: `LoginNewDeviceEvent`, `PermissionChangedEvent`, `UserCreatedEvent`, `PasswordChangedEvent`
+- `[x]` **IAM-11:** Event DTOs: `LoginNewDeviceEvent`, `PermissionChangedEvent`, `UserCreatedEvent`, `PasswordChangedEvent`
 - `[x]` **IAM-12:** Device Fingerprint Detection — so sánh `(ip, user-agent)` → emit `auth.login_new_device`
 - `[x]` **IAM-13:** `emit('auth.login_new_device', payload)` (qua Outbox) trong `AuthService.login()` [Tham khảo Outbox Spec](system_outbox_pattern.md)
-- `[ ]` **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- `[x]` **IAM-14:** Ghi `iam_outbox_events` + cache invalidate trong `RoleService/PermissionService` sau DB update [Tham khảo Outbox Spec](system_outbox_pattern.md)
 - `[x]` **IAM-15:** IAM Outbox Sweeper — Cronjob quét `iam_outbox_events` PENDING (dùng `SKIP LOCKED`) và push bù vào BullMQ. [Tham khảo Outbox Spec](system_outbox_pattern.md)
-- `[ ]` **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
+- `[x]` **IAM-16:** Integration tests: login mới → emit event; thay đổi role → cache xóa + emit event; login thiết bị cũ → không emit
 
 ### Phase 3: Profile & Password Settings
 
-- [ ] **IAM-16:** `PATCH /api/v1/iam/users/me/profile` — cập nhật `full_name`, `avatar_url` (validate domain `user-media` bucket)
-- [ ] **IAM-17:** `POST /api/v1/iam/users/me/change-password` — verify `oldPassword` Bcrypt, hash new, revoke all sessions + cache
-- [ ] **IAM-18:** `emit('auth.password_changed', payload)` sau đổi mật khẩu thành công
-- [ ] **IAM-19:** Unit & Integration tests: profile update, đổi mật khẩu, revoke sessions
+- `[x]` **IAM-16:** `PATCH /api/v1/iam/users/me/profile` — cập nhật `full_name`, `avatar_url` (validate domain `user-media` bucket)
+- `[x]` **IAM-17:** `POST /api/v1/iam/users/me/change-password` — verify `oldPassword` Bcrypt, hash new, revoke all sessions + cache
+- `[x]` **IAM-18:** `emit('auth.password_changed', payload)` sau đổi mật khẩu thành công
+- `[x]` **IAM-19:** Unit & Integration tests: profile update, đổi mật khẩu, revoke sessions
 
 ### Phase 4: User Management & Activation Flow
 
-- [ ] **IAM-20:** Admin APIs: `POST /api/v1/iam/users`, `GET /api/v1/iam/users` (phân trang), `PATCH /api/v1/iam/users/:id`
-- [ ] **IAM-21:** Activation Token — sinh 32 bytes random, lưu `SHA256(token)` vào Redis `iam:activation:hash:${sha256}` (TTL 24h)
-- [ ] **IAM-22:** `emit('auth.user_created', payload)` kèm `activationToken` (rawToken — Notification dùng để build URL)
-- [ ] **IAM-23:** `POST /api/v1/iam/auth/exchange-activation-token` — verify hash, xóa Redis (single-use), sinh SetupJWT (5m) → HttpOnly cookie
-- [ ] **IAM-24:** `POST /api/v1/iam/auth/activate` — decode SetupJWT cookie, hash mật khẩu, set `is_active=true`
-- [ ] **IAM-25:** `POST /api/v1/iam/users/:id/resend-activation` — Admin gửi lại link
-- [ ] **IAM-26:** E2E tests: full activation flow, single-use token, link lần 2 báo lỗi 400
+- `[x]` **IAM-20:** Admin APIs: `POST /api/v1/iam/users`, `GET /api/v1/iam/users` (phân trang), `PATCH /api/v1/iam/users/:id`
+- `[x]` **IAM-21:** Activation Token — sinh 32 bytes random, lưu `SHA256(token)` vào Redis `iam:activation:hash:${sha256}` (TTL 24h)
+- `[x]` **IAM-22:** `emit('auth.user_created', payload)` kèm `activationToken` (rawToken — Notification dùng để build URL)
+- `[x]` **IAM-23:** `POST /api/v1/iam/auth/exchange-activation-token` — verify hash, xóa Redis (single-use), sinh SetupJWT (5m) → HttpOnly cookie
+- `[x]` **IAM-24:** `POST /api/v1/iam/auth/activate` — decode SetupJWT cookie, hash mật khẩu, set `is_active=true`
+- `[x]` **IAM-25:** `POST /api/v1/iam/users/:id/resend-activation` — Admin gửi lại link
+- `[x]` **IAM-26:** E2E tests: full activation flow, single-use token, link lần 2 báo lỗi 400
 
 ---
 
