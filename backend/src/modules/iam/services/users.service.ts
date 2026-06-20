@@ -33,6 +33,7 @@ import { AuthService } from './auth.service';
 import { PermissionService } from './permission.service';
 import { UserListQueryDto } from '../dto/user.dto';
 import { PaginatedResponseDto } from '../../../core/dto/pagination.dto';
+import { TypeOrmQueryHelper } from '../../../core/database/typeorm-query.helper';
 
 @Injectable()
 export class UsersService {
@@ -61,25 +62,24 @@ export class UsersService {
       .leftJoinAndSelect('user.userRoles', 'userRole')
       .leftJoinAndSelect('userRole.role', 'role');
 
-    if (query.search) {
-      dbQuery.andWhere(
-        '(LOWER(user.fullName) LIKE LOWER(:search) OR LOWER(user.email) LIKE LOWER(:search))',
-        { search: `%${query.search}%` },
-      );
-    }
+    // Nạp Phân trang, Tìm kiếm, Sắp xếp động, và Bộ lọc isActive từ Helper
+    TypeOrmQueryHelper.apply(dbQuery, query, {
+      alias: 'user',
+      searchFields: ['user.fullName', 'user.email'],
+      filterableFields: ['isActive'],
+    });
 
-    if (query.isActive !== undefined && query.isActive !== '') {
-      const activeBool = query.isActive === 'true';
-      dbQuery.andWhere('user.isActive = :isActive', { isActive: activeBool });
-    }
-
+    // Lọc thủ công khóa ngoại thuộc bảng UserRoles (do tính chất liên kết quan hệ)
     if (query.roleId) {
       dbQuery
         .innerJoin('user.userRoles', 'filterUserRole')
         .andWhere('filterUserRole.roleId = :roleId', { roleId: query.roleId });
     }
 
-    dbQuery.orderBy('user.createdAt', 'DESC').skip(query.skip).take(query.take);
+    // Nếu query không yêu cầu sort động, ta thiết lập mặc định là user.createdAt DESC
+    if (!query.sort) {
+      dbQuery.orderBy('user.createdAt', 'DESC');
+    }
 
     const [data, total] = await dbQuery.getManyAndCount();
     return new PaginatedResponseDto(data, total, page, limit);
@@ -423,4 +423,87 @@ export class UsersService {
 
     return user;
   }
+
+  /**
+   * Khởi tạo lại mật khẩu do Admin yêu cầu: Đưa user về trạng thái chưa kích hoạt và gửi link thiết lập lại mật khẩu
+   */
+  async resetPassword(userId: string, adminId: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: { setting: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (userId === adminId) {
+      throw new BadRequestException('Administrators cannot reset their own password.');
+    }
+
+    const activationTokenPlain = crypto.randomBytes(32).toString('hex');
+    const activationTokenHash = crypto
+      .createHash('sha256')
+      .update(activationTokenPlain)
+      .digest('hex');
+
+    let outboxEventId: string | null = null;
+
+    outboxEventId = await this.dataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(UserEntity);
+      const outboxRepo = manager.getRepository(IamOutboxEntity);
+
+      // Cập nhật User về trạng thái chưa kích hoạt
+      user.isActive = false;
+      user.passwordHash = null;
+      await userRepo.save(user);
+
+      const outboxEvent = await outboxRepo.save({
+        eventType: IamEventTypes.AUTH_USER_CREATED,
+        payload: new UserCreatedEvent(
+          user.id,
+          user.email,
+          user.fullName,
+          adminId,
+          activationTokenPlain,
+          new Date().toISOString(),
+          user.setting?.preferredLang || IamDefaults.LANG,
+        ),
+        status: 'PENDING',
+      });
+
+      // Save token hash to Redis (TTL 48h)
+      const ttl =
+        this.configService.get<number>('ACTIVATION_TOKEN_TTL_SEC') || 172800;
+      await this.redisClient.set(
+        `${IamRedisKeys.ACTIVATION_HASH}${activationTokenHash}`,
+        JSON.stringify({ email: user.email, userId: user.id }),
+        'EX',
+        ttl,
+      );
+
+      return outboxEvent.id;
+    });
+
+    // Thu hồi toàn bộ phiên đăng nhập của user này ngay lập tức
+    await this.authService.revokeAllSessions(userId);
+    await this.redisClient.del(`iam:user_active:${userId}`);
+
+    if (outboxEventId) {
+      try {
+        const priority =
+          IamEventPriorities[IamEventTypes.AUTH_USER_CREATED] || 5;
+        await this.outboxQueue.add(
+          'process_event',
+          { eventId: outboxEventId },
+          { priority },
+        );
+      } catch (err) {
+        this.logger.warn(
+          `Failed to immediately enqueue outbox event ${outboxEventId}`,
+          err,
+        );
+      }
+      this.logger.debug(`Reset password initiated for user ${user.email}.`);
+    }
+  }
 }
+

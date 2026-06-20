@@ -10,11 +10,11 @@ services:
       POSTGRES_USER: solavie_admin
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U solavie_admin -d solavie_db"]
+      test: [ "CMD-SHELL", "pg_isready -U solavie_admin -d solavie_db" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -30,7 +30,7 @@ services:
     volumes:
       - redis_cache_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -46,7 +46,7 @@ services:
     volumes:
       - redis_queue_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_QUEUE_PASSWORD}", "ping"]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_QUEUE_PASSWORD}", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -54,7 +54,7 @@ services:
 
   # 4. Object Storage MinIO (Port 9000 & Console 9001)
   minio:
-    image: minio/minio:RELEASE.2024-06-10T16-36-28Z
+    image: minio/minio:RELEASE.2024-07-13T01-46-15Z
     container_name: solavie-minio
     environment:
       MINIO_ROOT_USER: minio_admin
@@ -66,7 +66,7 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -94,7 +94,10 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
     container_name: solavie-backend
     environment:
       NODE_ENV: development
@@ -127,6 +130,16 @@ services:
       ZALO_OA_ID: ${ZALO_OA_ID}
       ZALO_OA_ACCESS_TOKEN: ${ZALO_OA_ACCESS_TOKEN}
       ZALO_ZNS_SECRET_KEY: ${ZALO_ZNS_SECRET_KEY}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN}
+      JWT_SETUP_SECRET: ${JWT_SETUP_SECRET}
+      JWT_SETUP_EXPIRES_IN: ${JWT_SETUP_EXPIRES_IN}
+      ACTIVATION_TOKEN_TTL_SEC: ${ACTIVATION_TOKEN_TTL_SEC}
+      IDEMPOTENCY_TTL_SEC: ${IDEMPOTENCY_TTL_SEC}
+      AES_ENCRYPTION_KEY: ${AES_ENCRYPTION_KEY}
+      COOKIE_SECRET: ${COOKIE_SECRET}
     ports:
       - "3000:3000"
     depends_on:

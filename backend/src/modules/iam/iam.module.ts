@@ -24,12 +24,15 @@ import { UsersService } from './services/users.service';
 import { ProfileController } from './controllers/v1/profile.controller';
 import { UsersController } from './controllers/v1/users.controller';
 import { RolesController } from './controllers/v1/roles.controller';
+import { PermissionsController } from './controllers/v1/permissions.controller';
 import { JwtStrategy } from './guards/jwt.strategy';
 import { IamOutboxWorker } from './workers/outbox.worker';
 import { IamOutboxProcessor } from './processors/outbox.processor';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { BullModule } from '@nestjs/bullmq';
+import { IamSeedService } from './services/iam-seed.service';
+
 
 @Module({
   imports: [
@@ -66,6 +69,7 @@ import { BullModule } from '@nestjs/bullmq';
     JwtStrategy,
     IamOutboxWorker,
     IamOutboxProcessor,
+    IamSeedService,
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
@@ -80,6 +84,7 @@ import { BullModule } from '@nestjs/bullmq';
     ProfileController,
     UsersController,
     RolesController,
+    PermissionsController,
   ],
   exports: [
     TypeOrmModule,

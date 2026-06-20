@@ -1,0 +1,20 @@
+# ==========================================
+# Development Environment
+# ==========================================
+FROM node:20-alpine
+WORKDIR /usr/src/app
+
+# Cài đặt Nest CLI toàn cục để chạy các lệnh phát sinh nếu cần
+RUN npm install -g @nestjs/cli
+
+# Cài đặt thư viện trước để tối ưu Cache
+COPY package*.json ./
+RUN npm install
+
+# Copy source code
+COPY . .
+
+EXPOSE 3000
+
+# Sử dụng lệnh Watch (Hot Reload) cho Dev Mode
+CMD ["npm", "run", "start:dev"]

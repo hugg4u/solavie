@@ -169,4 +169,79 @@ export class ProfileService {
       );
     }
   }
+
+  /**
+   * Lấy thông tin chi tiết hồ sơ cá nhân và phân quyền thực tế của người dùng hiện tại
+   */
+  async getProfile(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: {
+        setting: true,
+        userRoles: {
+          role: {
+            policies: {
+              permission: true,
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const roles: string[] = [];
+    const permissions: Record<string, true | Record<string, any>[]> = {};
+
+    const hasSuperAdminRole = user.userRoles.some(
+      (ur) => ur.role && ur.role.code === 'SUPER_ADMIN',
+    );
+    if (hasSuperAdminRole) {
+      permissions['SUPER_ADMIN'] = true;
+    }
+
+    user.userRoles.forEach((ur) => {
+      if (ur.role) {
+        roles.push(ur.role.code);
+        if (ur.role.policies) {
+          ur.role.policies.forEach((policy) => {
+            if (policy.permission) {
+              const code = policy.permission.action;
+              const rule = policy.ruleExpression;
+              if (!permissions[code]) {
+                permissions[code] = rule ? [rule] : true;
+              } else if (permissions[code] !== true) {
+                if (!rule) {
+                  permissions[code] = true;
+                } else {
+                  const arr = permissions[code];
+                  if (Array.isArray(arr)) {
+                    arr.push(rule);
+                  }
+                }
+              }
+            }
+          });
+        }
+      }
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      isActive: user.isActive,
+      roles,
+      permissions,
+      setting: user.setting || {
+        preferredLang: 'vi',
+        timezone: 'Asia/Ho_Chi_Minh',
+        theme: 'light',
+      },
+    };
+  }
 }
+

@@ -2,6 +2,7 @@ import {
   Controller,
   Patch,
   Post,
+  Get,
   Body,
   Req,
   HttpCode,
@@ -12,12 +13,23 @@ import { ProfileService } from '../../services/profile.service';
 import { UpdateProfileDto, ChangePasswordDto } from '../../dto/profile.dto';
 import type { AuthenticatedRequest } from '../../interfaces/request.interface';
 
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('IAM Profile')
+@ApiBearerAuth()
 @Controller({
   path: 'iam/users/me',
   version: '1',
 })
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
+
+  @Get()
+  async getProfile(@Req() req: AuthenticatedRequest) {
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedException('User ID not found in token');
+    return this.profileService.getProfile(userId);
+  }
 
   @Patch('profile')
   async updateProfile(

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Global } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -19,7 +19,9 @@ import { TraceIdInterceptor } from './interceptors/trace-id.interceptor';
 import { TransformInterceptor } from './interceptors/transform.interceptor';
 import { IdempotencyInterceptor } from './interceptors/idempotency.interceptor';
 import { ClassSerializerInterceptor } from '@nestjs/common';
+import { ResourceHydratorRegistry } from './database/resource-hydrator.registry';
 
+@Global()
 @Module({
   imports: [
     ConfigModule,
@@ -44,6 +46,7 @@ import { ClassSerializerInterceptor } from '@nestjs/common';
     }),
   ],
   providers: [
+    ResourceHydratorRegistry,
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: TraceIdInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
@@ -51,5 +54,9 @@ import { ClassSerializerInterceptor } from '@nestjs/common';
     { provide: APP_INTERCEPTOR, useClass: TransformInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
+  exports: [
+    ResourceHydratorRegistry,
+  ],
 })
 export class CoreModule {}
+

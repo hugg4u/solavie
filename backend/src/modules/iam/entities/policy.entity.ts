@@ -31,8 +31,8 @@ export class PolicyEntity {
   @JoinColumn({ name: 'permission_id' })
   permission: PermissionEntity;
 
-  @Column({ name: 'rule_expression', nullable: true })
-  ruleExpression: string | null;
+  @Column({ name: 'rule_expression', type: 'jsonb', nullable: true })
+  ruleExpression: Record<string, any> | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

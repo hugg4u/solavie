@@ -20,13 +20,13 @@ export class UserEntity {
   @Column({ unique: true })
   email: string;
 
-  @Column({ name: 'password_hash', nullable: true, select: false })
+  @Column({ name: 'password_hash', type: 'varchar', nullable: true, select: false })
   passwordHash: string | null;
 
   @Column({ name: 'full_name' })
   fullName: string;
 
-  @Column({ name: 'avatar_url', nullable: true })
+  @Column({ name: 'avatar_url', type: 'varchar', nullable: true })
   avatarUrl: string | null;
 
   @Column({ name: 'is_active', default: false })

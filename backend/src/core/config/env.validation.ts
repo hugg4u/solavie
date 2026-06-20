@@ -37,6 +37,20 @@ export const envSchema = z.object({
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default('http://localhost:5174,http://localhost:3000'),
+  
+  // Super Admin Seeding
+  SUPER_ADMIN_ID: z
+    .string()
+    .uuid()
+    .default('00000000-0000-0000-0000-000000000000'),
+  SUPER_ADMIN_EMAIL: z
+    .string()
+    .email()
+    .default('superadmin@solavie.vn'),
+  SUPER_ADMIN_PASSWORD: z
+    .string()
+    .min(8)
+    .default('SuperSecurePassword@2026'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

@@ -81,4 +81,12 @@ export class UserListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsBooleanString()
   isActive?: string;
+
+  @IsOptional()
+  @IsString()
+  sort?: string = 'createdAt';
+
+  @IsOptional()
+  @IsEnum(['ASC', 'DESC'])
+  order?: 'ASC' | 'DESC' = 'DESC';
 }

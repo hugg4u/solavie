@@ -19,6 +19,10 @@ import {
 import { RequirePermissions } from '../../decorators/permissions.decorator';
 import type { AuthenticatedRequest } from '../../interfaces/request.interface';
 
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('IAM Users')
+@ApiBearerAuth()
 @Controller({
   path: 'iam/users',
   version: '1',
@@ -93,6 +97,22 @@ export class UsersController {
     await this.usersService.resendActivation(id, adminId);
     return {
       message: 'Activation email resend triggered successfully.',
+    };
+  }
+
+  @Post(':id/reset-password')
+  @RequirePermissions('iam.users.update')
+  async resetPassword(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    const adminId = req.user?.id;
+    if (!adminId)
+      throw new UnauthorizedException('Admin ID not found in token');
+
+    await this.usersService.resetPassword(id, adminId);
+    return {
+      message: 'Password reset initiated successfully. User sessions revoked and reset link email is being sent.',
     };
   }
 }

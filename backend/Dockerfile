@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 # Sao chép package configs
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Sao chép mã nguồn và compile
 COPY . .
@@ -22,7 +22,7 @@ ENV NODE_ENV=production
 
 # Chỉ cài dependencies phục vụ runtime
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --omit=dev && npm cache clean --force
 
 # Sao chép kết quả compile từ Stage builder
 COPY --from=builder /usr/src/app/dist ./dist
