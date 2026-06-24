@@ -103,3 +103,60 @@ CREATE INDEX idx_[module]_inbox_event_id ON [module]_inbox_events(event_id);
 ```
 
 **Bảo Tôn Hoàng Gia:** Tuyệt đối tuân thủ, không bao giờ được phép dùng `any` trong việc parse payload từ Event Inbox! Mọi payload phải đi qua validation pipe hoặc zod validation.
+
+---
+
+## 6. Đặc tả Định Tuyến Tin Nhắn Đầu Vào (Hybrid Inbox Routing)
+
+Hộp thư đầu vào của Chatbot Module áp dụng cơ chế định tuyến lai (Hybrid Routing) kết hợp kịch bản tĩnh (Flows) và AI Agent dựa trên trạng thái hội thoại (`bot_state`) lưu trữ trong bảng `chat_conversations`.
+
+### 6.1. Ba Trạng Thái Hội Thoại (`bot_state`)
+
+1.  **`MANUAL` (Chat tay):** Nhân viên Sales đang trực tiếp tiếp quản cuộc trò chuyện. Toàn bộ chatbot (tự động hóa và AI) bị vô hiệu hóa hoàn toàn trên phiên chat này.
+2.  **`FLOW_EXECUTING` (Chạy kịch bản tĩnh):** Hệ thống đang dẫn dắt khách hàng qua các node của một Flow đã được kích hoạt.
+3.  **`AUTOMATIC` (AI Agent tự động):** AI Agent RAG tiếp quản tư vấn tự do cho khách hàng.
+
+### 6.2. Thuật Toán Định Tuyến Tin Nhắn Nhận Được
+
+Mỗi khi nhận được tin nhắn từ khách hàng (`message.received`):
+
+```
+                        [Nhận Tin Nhắn Khách Hàng]
+                                    │
+                                    ▼
+                      Khớp từ khóa trong cấu hình
+                        `chat_keywords`?
+                       /                \
+                    (Có)               (Không)
+                     /                    \
+     [Chuyển bot_state = FLOW_EXECUTING]   Kiểm tra bot_state hiện tại:
+     [Kích hoạt Flow Executor]               ├─► MANUAL ──► Chuyển Inbox UI cho Sales
+                                             ├─► AUTOMATIC ──► Chạy AI Agent (RAG)
+                                             └─► FLOW_EXECUTING ──► [Kiểm tra đầu vào]
+```
+
+1.  **Khớp từ khóa kích hoạt:** Hệ thống chạy tin nhắn qua `KeywordRouterService`. Nếu khớp từ khóa tĩnh, hệ thống lập tức cập nhật `bot_state = FLOW_EXECUTING`, hủy các hàng đợi sequence cũ (nếu có), và chuyển tin nhắn vào `FlowExecutorService` để chạy kịch bản tương ứng bắt đầu từ Node Root.
+2.  **Xử lý theo trạng thái hiện tại (nếu không khớp từ khóa):**
+    -   **Trường hợp `bot_state = MANUAL`:** 
+        -   Bỏ qua chatbot hoàn toàn.
+        -   Đồng bộ tin nhắn trực tiếp lên giao diện Livechat của Sales qua WebSocket.
+        -   Đặt lại mốc cảnh báo warning badge 24h của cuộc chat.
+    -   **Trường hợp `bot_state = AUTOMATIC`:**
+        -   Chuyển tin nhắn vào hàng đợi debounce Redis `buffer:conversation:${conversationId}` trong 3 giây (để gom tin double-text).
+        -   Kích hoạt `AI_Agent_Service` thực hiện RAG search và suy luận LLM để trả lời khách hàng.
+    -   **Trường hợp `bot_state = FLOW_EXECUTING`:**
+        -   Hệ thống kiểm tra tin nhắn khách hàng gửi lên:
+            -   *Nếu khách hàng bấm nút, chọn carousel (tin nhắn dạng payload/button click khớp với các lựa chọn `next_node_id` của node hiện tại):* Tiếp tục thực thi node tiếp theo trong kịch bản.
+            -   *Nếu khách hàng gõ văn bản tự do (free-text) không khớp bất kỳ nút lựa chọn nào:* Kích hoạt cơ chế **Giải phóng kịch bản (Flow Release)**:
+                1. Tạm dừng thực thi kịch bản tĩnh.
+                2. Chuyển trạng thái hội thoại thành `bot_state = AUTOMATIC`.
+                3. Gửi tin nhắn đầu vào sang cho AI Agent xử lý ngay lập tức để AI trả lời linh hoạt câu hỏi tự do của khách.
+
+### 6.3. Bàn Giao (Handover) & Tiếp Quản Lại (Handback)
+
+-   **Bàn giao cho Sales (Handover):** AI Agent tự động chuyển đổi `bot_state = MANUAL` khi phát hiện các tín hiệu:
+    -   Khách yêu cầu gặp người hỗ trợ: *"gặp nhân viên"*, *"nói chuyện với tổng đài viên"*.
+    -   AI Agent gặp lỗi logic hoặc ảo giác (Hallucination Guard cảnh báo lỗi đầu ra).
+    -   Hệ thống tự động bắn sự kiện `chat.handover_requested` để thông báo cho nhân viên.
+-   **Bàn giao lại cho Bot (Handback API):** Nhân viên Sales sau khi xử lý xong có thể click nút "Bàn giao lại cho AI" trên giao diện Inbox Portal. API `POST /api/v1/chatbot/conversations/:id/handback` sẽ kiểm tra quyền ABAC và chuyển `bot_state` về `AUTOMATIC` để Bot tiếp tục trực ca.
+

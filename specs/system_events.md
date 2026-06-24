@@ -417,6 +417,133 @@ Ví dụ:
 }
 ```
 
+### 2.10. Domain: `chat_automation` — Tự Động Hóa & Chiến Dịch
+
+#### `chat.flow.executed`
+| Field | Value |
+|---|---|
+| **Producer** | Chatbot Module (Flows Engine) |
+| **Consumers** | Inbox Module, CRM Module, Notification Module |
+| **Trigger** | Khách hàng thực thi một node hành động hoặc hoàn thành một node trong kịch bản |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  conversationId: string;
+  flowId: string;
+  flowName: string;
+  currentNodeId: string;
+  nodeType: 'MESSAGE' | 'CAROUSEL' | 'ACTION' | 'CONDITION';
+  customerId: string;
+  executedAt: string;         // ISO8601
+}
+```
+
+#### `chat.keyword.matched`
+| Field | Value |
+|---|---|
+| **Producer** | Chatbot Module (Keyword Router) |
+| **Consumers** | Inbox Module |
+| **Trigger** | Khách hàng nhắn tin khớp từ khóa kích hoạt kịch bản |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  conversationId: string;
+  keyword: string;
+  matchType: 'EXACT' | 'CONTAINS' | 'STARTS_WITH';
+  flowId: string;
+  matchedAt: string;          // ISO8601
+}
+```
+
+#### `chat.sequence.subscribed`
+| Field | Value |
+|---|---|
+| **Producer** | Chatbot Module (Sequence Service) |
+| **Consumers** | CRM Module, Notification Module |
+| **Trigger** | Khách hàng được đưa vào chuỗi tin nhắn bám đuổi |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  customerId: string;
+  sequenceId: string;
+  sequenceName: string;
+  subscribedAt: string;       // ISO8601
+}
+```
+
+#### `chat.broadcast.campaign_created`
+| Field | Value |
+|---|---|
+| **Producer** | Chatbot Module (Broadcasting Engine) |
+| **Consumers** | Notification Module |
+| **Trigger** | Admin tạo mới chiến dịch gửi tin hàng loạt thành công |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  campaignId: string;
+  campaignName: string;
+  channel: 'FACEBOOK' | 'ZALO';
+  uploaderId: string;
+  targetCount: number;
+  createdAt: string;          // ISO8601
+}
+```
+
+#### `chat.broadcast.campaign_status_changed`
+| Field | Value |
+|---|---|
+| **Producer** | Chatbot Module (Broadcasting Worker) |
+| **Consumers** | Notification Module, Inbox Module |
+| **Trigger** | Chiến dịch gửi tin thay đổi trạng thái (chạy, tạm dừng do sập tag 24h, hoàn thành, lỗi) |
+| **Priority** | Tier 1 — CRITICAL (nếu sập Circuit Breaker lỗi liên tiếp) |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  campaignId: string;
+  campaignName: string;
+  oldStatus: 'PENDING' | 'PROCESSING' | 'PAUSED' | 'FAILED';
+  newStatus: 'PROCESSING' | 'COMPLETED' | 'PAUSED' | 'FAILED';
+  sentCount: number;
+  failedCount: number;
+  errorDetails?: string;      // Mô tả lỗi nếu chiến dịch thất bại hoặc bị ngắt
+  updatedAt: string;          // ISO8601
+}
+```
+
+---
+
+### 2.11. Domain: `crm_operations` — Nghiệp Vụ CRM Nâng Cao
+
+#### `crm.profile.merged`
+| Field | Value |
+|---|---|
+| **Producer** | CRM Module (MergeProfileService) |
+| **Consumers** | Inbox Module, Notification Module |
+| **Trigger** | Hợp nhất thành công hai hồ sơ trùng số điện thoại |
+| **Priority** | Tier 1 — CRITICAL (Cập nhật giao diện chat ngay lập tức) |
+
+**Payload:**
+```typescript
+{
+  eventId: string;
+  primaryCustomerId: string;
+  secondaryCustomerId: string;
+  phoneNumber: string;
+  mergedConversationsCount: number;
+  mergedAt: string;           // ISO8601
+}
+```
+
 ---
 
 ## 3. Mapping Event → Notification Channel
@@ -434,4 +561,6 @@ Ví dụ:
 | `appointment.confirmed` | Sales + Khách hàng | Email + Zalo ZNS | Tier 2 |
 | `appointment.cancelled` | Sales + Khách hàng | Email + Zalo ZNS | Tier 2 |
 | `appointment.reminder` | Khách hàng | Zalo ZNS / Email | Tier 3 |
-| `gateway.provider_failed`| IT Admin | In-App + Email | Tier 1 |
+| `gateway.provider_failed` | IT Admin | In-App + Email | Tier 1 |
+| `chat.broadcast.campaign_status_changed` | IT Admin (nếu FAILED) | In-App + Email | Tier 1 |
+| `crm.profile.merged` | Sales phụ trách | In-App | Tier 1 |

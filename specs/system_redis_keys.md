@@ -32,13 +32,15 @@
 
 > ⚠️ **Lưu ý bảo mật:** Key `iam:activation:hash:*` lưu **hash SHA256** của token, KHÔNG bao giờ lưu rawToken. rawToken chỉ tồn tại trong email gửi cho người dùng và payload event.
 
-### 2.2. Module Gateway
+### 2.2. Module Gateway & Chatbot
 
 | Key Pattern | Instance | TTL | Giá trị lưu | Mô tả |
-|---|---|---|---|---|
-| `gw:providers:configured` | `cache` | 300s (5m) | `[{providerId, name, ...}]` | Cache danh sách LLM providers (masked API key) |
-| `lock:conversation:${conversationId}` | `queue` | dynamic | `agentId / 'AI'` | Distributed lock ngăn xử lý đồng thời 1 conversation |
-| `queue:conversation:${conversationId}` | `queue` | dynamic | Redis List `[messageContent, ...]` | Hàng đợi tin nhắn khi lock đang giữ (max 2 items) |
+| --- | --- | --- | --- | --- |
+| `gw:providers:configured` | `cache` | 300s (5m) | `[{providerId, name, ...}]` | Cache cấu hình providers hoạt động (masked API key) |
+| `cooldown:provider:${providerId}` | `cache` | 900s (15m) | `1` | Đánh dấu model provider bị tạm ngắt do cạn quota/lỗi mạng |
+| `errors:provider:${providerId}` | `cache` | 3600s (1h) | `{ count: number }` | Đếm số lỗi liên tiếp của provider phục vụ tự động failover |
+| `lock:conversation:${conversationId}` | `cache` | 30s | `agentId / 'AI'` | Distributed lock chống double-texting khi AI Agent xử lý |
+| `buffer:conversation:${conversationId}` | `cache` | 5s | Redis List `[message, ...]` | Bộ đệm tin nhắn khách hàng gửi liên tiếp trước khi debounce |
 
 ### 2.3. Module Inbox
 
@@ -66,6 +68,11 @@ BullMQ tự quản lý key pattern riêng. Không can thiệp thủ công.
 | Queue Name | Mô tả |
 |---|---|
 | `solavie:chat-processing` | Xử lý tin nhắn AI (Chatbot Orchestrator) |
+| `solavie:chatbot-debounce` | Debounce tin nhắn gửi dồn dập (Gộp tin 3s) |
+| `solavie:chatbot-followup` | Hàng đợi gửi tin nhắn chăm sóc nhắc nhở sau 15-30 phút |
+| `solavie:chatbot-sequence` | Thực thi trì hoãn các bước trong chuỗi chăm sóc |
+| `solavie:facebook-broadcast` | Hàng đợi xử lý gửi chiến dịch hàng loạt qua FB Messenger |
+| `solavie:zalo-broadcast` | Hàng đợi xử lý gửi chiến dịch hàng loạt qua Zalo OA |
 | `solavie:notification-email` | Hàng đợi gửi Email (AWS SES) |
 | `solavie:notification-zalo` | Hàng đợi gửi Zalo ZNS |
 | `solavie:webhook-outbox` | Retry webhook đến Facebook/Zalo |

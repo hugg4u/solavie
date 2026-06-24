@@ -26,7 +26,7 @@
 | **Chatbot** | 7 phases | 34 | 1 | 0 | 33 |
 | **CRM** | 3 phases | 19 | 0 | 0 | 19 |
 | **Inbox** | 5 phases | 14 | 0 | 0 | 14 |
-| **Booking** | 6 phases | 16 | 0 | 0 | 16 |
+| **Booking** | 6 phases | 22 | 0 | 0 | 22 |
 | **Notification** | 4 phases | 30 | 5 | 0 | 25 |
 | **Storage** | — | 5 | 1 | 0 | 4 |
 | **System-Level** | 3 phases | 12 | 8 | 0 | 4 |
@@ -157,26 +157,31 @@
 >
 > ⚠️ **Gateway phải hoàn thành trước khi Chatbot và Inbox hoạt động.**
 
-- [ ] **GW-01:** Fastify adapter setup (NestJS platform-fastify)
-- [ ] **GW-02:** Channel Configuration API — quản lý cấu hình FB/Zalo (lưu AES-256-GCM encrypted)
-- [ ] **GW-03:** Signature Middleware — verify HMAC-SHA256 Facebook webhook
-- [ ] **GW-04:** Zalo OA Signature Middleware — verify Zalo webhook signature
-- [ ] **GW-05:** Parser & Mapper — transform FB/Zalo JSON → `UnifiedMessage` interface
-- [ ] **GW-06:** BullMQ Integration — setup kết nối `REDIS_QUEUE_URL`
-- [ ] **GW-07:** BullMQ Producer — đẩy `UnifiedMessage` vào queue, HTTP 200 < 200ms
-- [ ] **GW-08:** Migration + Entity `gw_incoming_events` (Outbox pattern) [Tham khảo Outbox Spec](system_outbox_pattern.md)
-- [ ] **GW-09:** Hybrid Outbox Logic — DB Transaction nhận webhook + save outbox + push queue ngay lập tức. [Tham khảo Outbox Spec](system_outbox_pattern.md)
-- [ ] **GW-10:** `GatewayCryptoService` — AES-256-GCM encrypt/decrypt API keys
+- [x] **GW-01:** Fastify adapter setup (NestJS platform-fastify)
+- [x] **GW-02:** Channel Configuration API — quản lý cấu hình FB/Zalo (lưu AES-256-GCM encrypted)
+- [x] **GW-03:** Signature Middleware — verify HMAC-SHA256 Facebook webhook
+- [x] **GW-04:** Zalo OA Signature Middleware — verify Zalo webhook signature
+- [x] **GW-05:** Parser & Mapper — transform FB/Zalo JSON → `UnifiedMessage` interface
+- [x] **GW-06:** BullMQ Integration — setup kết nối `REDIS_QUEUE_URL`
+- [x] **GW-07:** BullMQ Producer — đẩy `UnifiedMessage` vào queue, HTTP 200 < 200ms
+- [x] **GW-08:** Migration + Entity `gw_incoming_events` (Outbox pattern) [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [x] **GW-09:** Hybrid Outbox Logic — DB Transaction nhận webhook + save outbox + push queue ngay lập tức. [Tham khảo Outbox Spec](system_outbox_pattern.md)
+- [x] **GW-10:** `GatewayCryptoService` — AES-256-GCM encrypt/decrypt API keys
 - [x] **GW-11:** Redis Isolation Config — `REDIS_CACHE_URL` + `REDIS_QUEUE_URL` (→ DevOps task DEV-05/06)
-- [ ] **GW-12:** Background Recovery Worker — `@Interval` scan `gw_incoming_events` status `PENDING` → retry
-- [ ] **GW-13:** BullMQ shared connection config (default job options: attempts=3, backoff exponential)
-- [ ] **GW-14:** `GET /api/v1/gateway/providers/supported` — danh sách LLM hãng tĩnh + cache group
-- [ ] **GW-15:** `GET /api/v1/gateway/providers/configured` — query DB, mask API keys, Redis cache 300s
-- [ ] **GW-16:** Provider cache invalidation khi Admin cập nhật
-- [ ] **GW-17:** Migration + Entity `gw_prompt_variables`
-- [ ] **GW-18:** Prompt Variables CRUD — `POST`/`GET /api/v1/gateway/prompts/variables` (guard `prompt:write`/`prompt:read`)
-- [ ] **GW-19:** Prompt Injection Filter — regex blacklist kiểm duyệt đầu vào
-- [ ] **GW-20:** Prompt Variables Redis cache 300s + invalidation
+- [x] **GW-12:** Background Recovery Worker — `@Interval` scan `gw_incoming_events` status `PENDING` → retry
+- [x] **GW-13:** BullMQ shared connection config (default job options: attempts=3, backoff exponential)
+- [x] **GW-14:** `GET /api/v1/gateway/providers/supported` — danh sách LLM hãng tĩnh + cache group
+- [x] **GW-15:** `GET /api/v1/gateway/providers/configured` — query DB, mask API keys, Redis cache 300s
+- [x] **GW-16:** Provider cache invalidation khi Admin cập nhật
+- [x] **GW-17:** Migration + Entity `gw_prompt_variables`
+- [x] **GW-18:** Prompt Variables CRUD — `POST`/`GET /api/v1/gateway/prompts/variables` (guard `prompt:write`/`prompt:read`)
+- [x] **GW-19:** Prompt Injection Filter — regex blacklist kiểm duyệt đầu vào
+- [x] **GW-20:** Prompt Variables Redis cache 300s + invalidation
+- [ ] **GW-21:** Zalo OA Token Refresh — `ZaloTokenSyncWorker` chạy ngầm làm mới access token mỗi 20 giờ
+- [ ] **GW-22:** Webhook Carousel Parser — hỗ trợ parse Facebook Carousel và Zalo List Message gửi về
+- [ ] **GW-23:** Comment Automation Service — ẩn comment có SĐT (Regex), auto-reply và inbox khách
+- [ ] **GW-24:** Growth Link Webhook Parser — bóc tách tham số `referral.ref` hoặc QR Code param chuyển tiếp vào Chatbot
+- [ ] **GW-25:** Interaction Window Guard — tự động chặn gửi tin ngoài cửa sổ tương tác (FB/Zalo 24h) nếu không đính kèm Message Tag hợp lệ (`CONFIRMED_EVENT_UPDATE` hoặc `HUMAN_AGENT`)
 
 ---
 
@@ -229,7 +234,19 @@
 - [ ] **CB-30:** Migration thêm cột `customer_id` vào `chat_conversations`
 - [ ] **CB-31:** `emit('chat.handover_requested', payload)` trong `ChatbotHandoverService.triggerHandover()`
 - [ ] **CB-32:** Handover Message — gửi tin lịch sự cho khách ngay khi chuyển MANUAL
-- [ ] **CB-33:** `POST /api/v1/chat/conversations/:id/handback` (guard `chat:write`)
+- [ ] **CB-33:** `POST /api/v1/chat/conversations/:id/handback` (guard `inbox.conversation.write`)
+- [ ] **CB-34:** Flows CSDL Migration — khởi tạo cấu trúc CSDL cho `chat_flows` và `chat_nodes`
+- [ ] **CB-35:** Graph Validator Service — kiểm duyệt cycle loop (DFS) và node mồ côi (BFS) trước khi lưu
+- [ ] **CB-36:** Flows Admin REST APIs — `GET`/`POST`/`PUT`/`DELETE /api/v1/chatbot/flows`
+- [ ] **CB-37:** Flow Executor Engine — `FlowExecutorService` duyệt cây JSON node, chạy các logic hành động và điều hướng node tiếp theo
+- [ ] **CB-38:** Keywords Matcher Service — `KeywordRouterService` bắt từ khóa MATCH, CONTAINS, STARTS_WITH để kích hoạt kịch bản
+- [ ] **CB-39:** Keywords Admin REST APIs — `GET`/`POST`/`DELETE /api/v1/chatbot/keywords`
+- [ ] **CB-40:** Sequences CSDL Migration — khởi tạo cấu trúc cho `chat_sequences`, `chat_sequence_steps` và `chat_sequence_subscribers`
+- [ ] **CB-41:** Sequence Scheduler Engine — `SequenceSchedulerService` sử dụng BullMQ delay queue (`solavie:chatbot-sequence`) để đẩy tin bám đuổi theo timeline
+- [ ] **CB-42:** Growth Tools Generator — API sinh Ref URL và mã QR tương ứng gán `ref_parameter` trỏ tới kịch bản Flow
+- [ ] **CB-43:** Broadcasting Database Migration — khởi tạo bảng `chat_broadcast_campaigns` và `chat_broadcast_logs`
+- [ ] **CB-44:** Broadcasting Engine — `BroadcastService` lập danh sách, phân lô (50 khách) và tự động giãn cách gửi tin (FB 1s, Zalo 0.5s) qua BullMQ
+- [ ] **CB-45:** Quiet Hours & Circuit Breaker — hoãn gửi tin ban đêm (22h-7h) và tự ngắt bảo vệ khi lỗi liên tiếp 20 tin, ghi Outbox cảnh báo IT Admin
 
 ### Phase 5: Centralized Logging, Sync & Monitoring
 
@@ -280,6 +297,8 @@
 - [ ] **CRM-14:** Notes APIs: `GET`/`POST`/`PUT`/`DELETE /api/v1/crm/customers/:id/notes`, `PATCH .../pin`
 - [ ] **CRM-15:** Notes Guard — chỉ tác giả hoặc Admin được sửa/xóa
 - [ ] **CRM-16:** Audit registration cho `crm_customer_notes` (Subscriber catch INSERT/UPDATE/DELETE)
+- [ ] **CRM-24:** `MergeProfileService` — tự động chạy ngầm gộp hồ sơ trùng SĐT, gộp conversations & activities lịch sử, ghi snapshot lỗi xung đột vào note dưới khóa Redis `lock:merge:phone`
+- [ ] **CRM-25:** Profile Merge REST API — `POST /api/v1/crm/customers/:id/merge` cho phép gộp thủ công từ UI, bảo vệ bởi `Idempotency-Key`
 
 ### Phase 3: Event-Driven Notification Integration
 
@@ -315,12 +334,14 @@
 
 ### Phase 3: REST APIs
 
-- [ ] **INB-09:** `GET /api/v1/inbox/conversations` — phân trang, lọc state/assignee/channel (guard `chat:read`)
+- [ ] **INB-09:** `GET /api/v1/inbox/conversations` — phân trang, lọc state/assignee/channel (guard `inbox.conversation.read`)
 - [ ] **INB-10:** `GET /api/v1/inbox/conversations/:id/timeline` — merge `chat_messages` + `inbox_internal_comments` sort by time
 - [ ] **INB-11:** `POST /api/v1/inbox/conversations/:id/claim` — cập nhật assignee, state=MANUAL, broadcast `server:conversation.assigned`
 - [ ] **INB-12:** `POST /api/v1/inbox/conversations/:id/messages` — Sales gửi tin, gọi `GatewayApiService`, update DB, clear typing lock
 - [ ] **INB-13:** `POST /api/v1/inbox/conversations/:id/comments` — lưu DB, extract `@username`, `emit('inbox.agent_mentioned', payload)`
 - [ ] **INB-14:** `GET /api/v1/inbox/quick-replies` — lấy danh sách mẫu trả lời nhanh
+- [ ] **INB-20:** Interaction Window Badge — hiển thị nhãn cảnh báo cửa sổ tương tác 24h (Xanh/Đỏ) trên khung chat livechat
+- [ ] **INB-21:** Outside Window Composer Policy — tự động lock composer khi ngoài 24h (FB/Zalo), chỉ cho phép Sales chọn mẫu tin nhắn mẫu (ZNS/Message Tag) có sẵn để gửi đi
 
 ### Phase 4: Round-Robin Auto-Routing
 
@@ -355,7 +376,7 @@
 
 ### Phase 3: Booking & CRM Sync
 
-- [ ] **BK-07:** `POST /api/v1/booking/appointments` — đặt lịch hẹn
+- [ ] **BK-07:** `POST /api/v1/booking/appointments` — đặt lịch hẹn, chuẩn hóa và validate số điện thoại di động Việt Nam (ném lỗi `INVALID_PHONE_NUMBER` nếu sai)
 - [ ] **BK-08:** Round-Robin Host Allocation — Redis pointer nếu không chỉ định Sales
 - [ ] **BK-09:** CRM Customer Sync — tìm hoặc tạo `crm_customers`, gán `assignee_id`
 - [ ] **BK-10:** CRM Activity Log — ghi `APPOINTMENT_SCHEDULED` vào `crm_activities`
@@ -371,14 +392,15 @@
 
 ### Phase 5: AI Chatbot Integration
 
-- [ ] **BK-16:** Tool `get_booking_slots` cho ReAct Agent
-- [ ] **BK-17:** Tool `create_appointment` cho ReAct Agent
+- [ ] **BK-17:** Tool `get_booking_slots` cho ReAct Agent (truy vấn public slots API)
+- [ ] **BK-18:** Tool `create_appointment` cho ReAct Agent (xử lý exception `INVALID_PHONE_NUMBER` để chatbot phản hồi)
 
 ### Phase 6: Automated Testing
 
-- [ ] **BK-18:** Unit tests slot calculation — trùng lịch, Buffer Time, Min Notice
-- [ ] **BK-19:** Unit tests Round-Robin — nhiều khách book đồng thời
-- [ ] **BK-20:** Integration tests event emission — `appointment.confirmed` + `appointment.cancelled`
+- [ ] **BK-19:** Unit tests slot calculation — trùng lịch, Buffer Time, Min Notice
+- [ ] **BK-20:** Unit tests Phone Validation — validate các trường hợp số điện thoại
+- [ ] **BK-21:** Unit tests Round-Robin — nhiều khách book đồng thời
+- [ ] **BK-22:** Integration tests event emission — `appointment.confirmed` + `appointment.cancelled`
 
 ---
 
@@ -426,13 +448,13 @@
 - [ ] **NOT-C10:** `INotificationProvider` interface
 - [ ] **NOT-C11:** `InAppProvider` — Socket.io direct emit (Tier 1 Critical, < 500ms)
 - [ ] **NOT-C12:** `EmailProvider` — Nodemailer + AWS SES transport
-- [ ] **NOT-C13:** `ZaloProvider` — Zalo ZNS API client + fallback logic (zalo_user_id=null → email)
+- [ ] **NOT-C13:** `ZaloProvider` — Zalo ZNS API client + chuẩn hóa số điện thoại 84xxxxxxxxx
 - [ ] **NOT-C14:** `ProviderRegistry` — factory inject đúng provider theo channel
 
 **C.4 — BullMQ Queues & Workers:**
 - [ ] **NOT-C15:** Define 3 queues: `email-notification-queue`, `zalo-notification-queue`, `scheduled-notification-queue`
 - [ ] **NOT-C16:** `EmailWorker` — BullMQ Processor + error handling + log update
-- [ ] **NOT-C17:** `ZaloWorker` — BullMQ Processor + ZNS API + fallback email
+- [ ] **NOT-C17:** `ZaloWorker` — BullMQ Processor + ZNS API + tự động fallback gửi Email qua AWS SES khi ZNS gặp lỗi
 - [ ] **NOT-C18:** `ScheduledWorker` — delayed job processor (reminder 24h + 1h)
 - [ ] **NOT-C19:** DLQ handling sau `maxAttempts` exceeded
 
@@ -462,7 +484,7 @@
 - [ ] **NOT-D7:** Integration test: `chat.handover_requested` → In-App WebSocket < 500ms
 - [ ] **NOT-D8:** Idempotency test: cùng event gửi 2 lần → chỉ 1 notification delivered [Tham khảo Inbox Pattern Spec](system_inbox_pattern.md)
 - [ ] **NOT-D9:** DLQ test: EmailProvider fail 3 lần → job vào DLQ + log FAILED
-- [ ] **NOT-D10:** Zalo Fallback test: `zalo_user_id=null` → auto email
+- [ ] **NOT-D10:** Zalo Fallback test: ZNS thất bại do SĐT không đăng ký Zalo hoặc lỗi API ZNS → tự động gửi Email fallback qua AWS SES thành công
 - [ ] **NOT-D11:** Quiet Hours test: Email blocked → In-App vẫn gửi
 
 ---

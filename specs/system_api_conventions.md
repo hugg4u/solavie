@@ -126,6 +126,11 @@ Ví dụ:
 | `IP_BLOCKED` | 429 | IP bị khóa do brute-force |
 | `CONVERSATION_LOCKED` | 422 | Cuộc hội thoại đang bị khóa (AI đang xử lý) |
 | `SLOT_NOT_AVAILABLE` | 409 | Khung giờ đặt lịch không còn trống |
+| `FLOW_LOOP_DETECTED` | 400 | Phát hiện vòng lặp vô hạn hoặc node mồ côi trong kịch bản |
+| `CAMPAIGN_ALREADY_PROCESSING` | 422 | Chiến dịch gửi tin hàng loạt đang chạy, không thể sửa/chạy lại |
+| `OUTSIDE_INTERACTION_WINDOW` | 422 | Khách ngoài cửa sổ tương tác (FB/Zalo 24h) và không có tag hợp lệ |
+| `ZALO_TOKEN_EXPIRED` | 422 | Access token của Zalo OA hết hạn hoặc bị thu hồi |
+| `DUPLICATE_IDEMPOTENCY_KEY` | 409 | Khóa Idempotency-Key đã được gửi trước đó với payload khác |
 
 ---
 
@@ -165,18 +170,22 @@ Authorization: Bearer <accessToken>
 
 ## 8. Idempotency Keys
 
-Các API ghi dữ liệu nhạy cảm (tạo lịch hẹn, gửi thông báo) phải hỗ trợ Idempotency Key:
+Các API ghi dữ liệu nhạy cảm hoặc thực hiện các tác vụ tốn tài nguyên (tạo lịch hẹn, gửi thông báo, kích hoạt chiến dịch) bắt buộc phải hỗ trợ header kiểm tra trùng lặp:
 
 ```
-X-Idempotency-Key: <uuid-v4>
+Idempotency-Key: <uuid-v4>
 ```
 
-Nếu cùng Key được gửi 2 lần, server trả về response của lần đầu mà không xử lý lại.
+Nếu cùng một `Idempotency-Key` được gửi lên trong vòng **24 giờ**, server sẽ không thực hiện lại logic xử lý mà trả về trực tiếp response đã cache trong Redis (`cache` instance).
 
 Áp dụng bắt buộc cho:
-- `POST /api/v1/booking/appointments` (tạo lịch hẹn)
-- `POST /api/v1/iam/users` (tạo nhân viên)
-- Notification delivery jobs
+- `POST /api/v1/booking/appointments` (Tạo lịch hẹn)
+- `POST /api/v1/iam/users` (Tạo tài khoản nhân viên mới)
+- `POST /api/v1/chatbot/flows` (Tạo kịch bản luồng tin nhắn tự do)
+- `POST /api/v1/chatbot/broadcast-campaigns` (Tạo chiến dịch gửi tin hàng loạt)
+- `POST /api/v1/chatbot/broadcast-campaigns/:id/execute` (Kích hoạt chạy chiến dịch gửi tin)
+- `POST /api/v1/crm/customers/:id/merge` (Gộp hồ sơ trùng SĐT thủ công)
+- Toàn bộ các công việc đẩy tin nhắn trong hàng đợi (Notification delivery jobs)
 
 ---
 

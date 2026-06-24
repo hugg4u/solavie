@@ -25,15 +25,15 @@
 
 | Module | Vai trò | Thư mục Spec | DB Prefix |
 |---|---|---|---|
-| **Gateway** | Tiếp nhận webhook đa kênh, định tuyến LLM, quản lý provider AI | `specs/gateway/` | `gw_` |
-| **Chatbot** | Orchestrator AI: RAG, ReAct Agent, Hybrid Chat, phân loại OOD | `specs/chatbot/` | `chat_` |
-| **CRM** | Quản lý Lead/Customer, tính ROI Solar, gộp hồ sơ trùng | `specs/crm/` | `crm_` |
-| **IAM** | Xác thực JWT, phân quyền RBAC+ABAC, quản lý nhân viên | `specs/iam/` | `iam_` |
-| **Inbox** | Unified inbox, WebSocket real-time, collision detection | `specs/inbox/` | `inbox_` |
-| **Booking** | Lịch hẹn, lịch rảnh Sales, Google Calendar, Round-Robin | `specs/booking/` | `booking_` |
-| **Notification** | Event consumer, phân phối In-App/Email/Zalo ZNS | `specs/notification/` | `notif_` |
-| **Storage** | MinIO file management, Pre-signed URL, Garbage Collector | `specs/storage/` | `storage_` |
-| **DevOps** | Docker, Redis isolation, Grafana Loki, CI/CD | `specs/devops/` | — |
+| **Gateway** | Webhook đa kênh, `ZaloTokenSyncWorker` refresh token, model routing, và chính sách 24h | `specs/gateway/` | `gw_` |
+| **Chatbot** | Orchestrator AI RAG/ReAct, **Sub-modules: Flows Engine (luồng tự do), Keywords, Sequences, QR/Ref Growth Tools, Broadcasting Engine** | `specs/chatbot/` | `chat_` |
+| **CRM** | Hồ sơ Lead/Customer, Solar ROI Calculator, **Sub-module: MergeProfileService (gộp trùng SĐT)** | `specs/crm/` | `crm_` |
+| **IAM** | Xác thực JWT Rotation, phân quyền dynamic RBAC+ABAC, Audit Log | `specs/iam/` | `iam_` |
+| **Inbox** | Unified Inbox, WebSockets, nhãn cảnh báo 24h, mẫu tin đính tag, comments | `specs/inbox/` | `inbox_` |
+| **Booking** | Event Types, availabilities, Round-Robin Host, sync GCal | `specs/booking/` | `booking_` |
+| **Notification** | Event consumer, gửi In-App, Email AWS SES, Zalo ZNS | `specs/notification/` | `notif_` |
+| **Storage** | MinIO file storage, Pre-signed URL, Garbage Collector | `specs/storage/` | `storage_` |
+| **DevOps** | Docker Compose, Redis isolation (6379 vs 6380), Grafana Loki | `specs/devops/` | — |
 
 ---
 
@@ -76,6 +76,16 @@ Repository/Infra       ← DB access, Redis, External APIs
 - Token activation **lưu dưới dạng SHA256 hash** trong Redis — không lưu raw token
 - Dữ liệu nhạy cảm (SĐT, Email) phải **Data Masking** trước khi gửi ra LLM API ngoài
 - Access Token lưu trong **Memory** (không localStorage). Refresh Token trong **HttpOnly Cookie**
+
+### 3.6. Cơ Chế Phân Phối Tin Nhắn Đầu Vào & Định Tuyến Tự Động
+Khi Gateway nhận tin nhắn từ Facebook/Zalo Webhook:
+1.  **Incoming Event Outbox:** Webhook payload được lưu vào bảng `gw_incoming_events` dạng `PENDING` để bảo vệ dữ liệu trước khi xử lý.
+2.  **Keyword Matching Stage:** Tin nhắn được kiểm tra qua `KeywordRouterService`. Nếu khớp từ khóa cấu hình trong bảng `chat_keywords`, hệ thống khóa `bot_state` của cuộc trò chuyện thành `FLOW_EXECUTING` và khởi chạy kịch bản luồng tương ứng (`FlowExecutorService`).
+3.  **Conversational State Routing:**
+    -   Nếu `bot_state = MANUAL`: Bỏ qua tự động hóa, tin nhắn được chuyển thẳng lên màn hình Inbox cho nhân viên phản hồi thủ công.
+    -   Nếu `bot_state = FLOW_EXECUTING`: Tin nhắn tiếp tục được đẩy vào `FlowExecutorService` để chạy các node tiếp theo. Nếu khách hàng nhập văn bản tự do lạc đề (không click button/carousel của kịch bản), động cơ sẽ tự giải phóng luồng, chuyển `bot_state = AUTOMATIC` để AI Agent can thiệp.
+    -   Nếu `bot_state = AUTOMATIC`: Tin nhắn được phân tích bởi AI Agent (RAG Search + LLM Prompt) để tự động trả lời hoặc gọi các công cụ (Booking, ROI).
+4.  **Handover Alert:** Nếu AI Agent 2 lần liên tiếp gặp lỗi hoặc không tìm thấy câu trả lời, hệ thống sẽ tự động gán cuộc chat sang `MANUAL`, gửi thông báo handover cho nhân viên và gửi câu trả lời lịch sự xin lỗi khách hàng.
 
 ---
 
@@ -125,11 +135,13 @@ Notification ──→ In-App WebSocket → Admin Dashboard
 | IAM | Queue | `iam:activation:hash:${sha256}` | 24 giờ |
 | IAM | Cache | `user:permissions:${userId}` | 1 giờ |
 | Gateway | Cache | `gw:providers:configured` | 5 phút |
-| Gateway | Queue | `lock:conversation:${id}` | custom |
-| Gateway | Queue | `queue:conversation:${id}` | custom |
+| Gateway | Cache | `cooldown:provider:${providerId}` | 15 phút |
+| Gateway | Cache | `errors:provider:${providerId}` | 1 giờ |
+| Chatbot | Cache | `lock:conversation:${conversationId}` | 30 giây |
+| Chatbot | Cache | `buffer:conversation:${conversationId}` | 5 giây |
+| CRM | Cache | `lock:merge:phone:${phone}` | 10 giây |
+| Booking | Cache | `lock:booking:slot:${slotId}` | 5 phút |
 | Inbox | Cache | `lock:typing:conversation:${id}` | 5 giây |
-| CRM | Cache | `lock:merge:phone:${phone}` | custom |
-| Booking | Cache | `lock:booking:slot:${slotId}` | custom |
 
 ---
 
@@ -195,6 +207,12 @@ Notification ──→ In-App WebSocket → Admin Dashboard
 | `auth.password_changed` | IAM | Notification | Đổi mật khẩu thành công |
 | `permission.changed` | IAM | Notification | Thay đổi quyền nhân viên |
 | `llm.metrics.created` | Chatbot/Gateway | Gateway (Background Worker) | Ghi nhận chi phí AI |
+| `chat.flow.executed` | Chatbot | CRM, Notification, Inbox | Kích hoạt luồng kịch bản thành công |
+| `chat.keyword.matched` | Chatbot | Inbox | Tin nhắn khớp từ khóa kích hoạt |
+| `chat.sequence.subscribed`| Chatbot | CRM, Notification | Khách tham gia chuỗi chăm sóc |
+| `chat.broadcast.campaign_created` | Chatbot | Notification | Chiến dịch gửi tin hàng loạt được tạo |
+| `chat.broadcast.campaign_status_changed` | Chatbot | Notification, Inbox | Thay đổi trạng thái chiến dịch gửi tin |
+| `crm.profile.merged` | CRM | Inbox, Notification | Hợp nhất hồ sơ trùng SĐT thành công |
 
 ---
 

@@ -24,7 +24,7 @@ Trong mô hình phân quyền ABAC, các quy tắc logic yêu cầu so khớp th
 +---------------------------------------------|---------------+
 |                        Module Nghiệp Vụ      |               |
 |  +---------------------------+              |               |
-|  | LeadHydrator (CRM Module) |--------------+               |
+|  | CustomerHydrator (CRM Module) |--------------+               |
 |  +---------------------------+                              |
 +-------------------------------------------------------------+
                                               | get()
@@ -103,36 +103,72 @@ export class ResourceHydratorRegistry {
 ## 3. Quy Trình Phối Hợp & Tích Hợp (Integration Steps)
 
 ### Bước 1: Khai báo ở Module Nghiệp vụ
-Khi viết một module mới (ví dụ: CRM), lập trình viên tạo service `LeadHydrator` triển khai interface `ResourceHydrator` và đăng ký nó với Registry trong pha khởi động Module:
+Khi viết một module mới (ví dụ: CRM), lập trình viên tạo service `CustomerHydrator` triển khai interface `ResourceHydrator` và đăng ký nó với Registry trong pha khởi động Module:
 
 ```typescript
-// src/modules/crm/services/lead-hydrator.service.ts
+// src/modules/crm/services/customer-hydrator.service.ts
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ResourceHydrator } from '../../../core/database/resource-hydrator.interface';
 import { ResourceHydratorRegistry } from '../../../core/database/resource-hydrator.registry';
-import { LeadEntity } from '../entities/lead.entity';
+import { CustomerEntity } from '../entities/customer.entity';
 
 @Injectable()
-export class LeadHydrator implements ResourceHydrator, OnModuleInit {
+export class CustomerHydrator implements ResourceHydrator, OnModuleInit {
   constructor(
-    @InjectRepository(LeadEntity)
-    private readonly leadRepo: Repository<LeadEntity>,
+    @InjectRepository(CustomerEntity)
+    private readonly customerRepo: Repository<CustomerEntity>,
     private readonly registry: ResourceHydratorRegistry,
   ) {}
 
   // Đăng ký tự động khi Module CRM khởi động
   onModuleInit() {
-    this.registry.register('crm.lead', this);
+    this.registry.register('crm.customer', this);
   }
 
   async fetchResource(id: string): Promise<Record<string, any> | null> {
     // Chỉ lấy các trường cần dùng để check ABAC
-    return this.leadRepo.findOne({
+    return this.customerRepo.findOne({
       where: { id },
-      select: { id: true, assigneeId: true, status: true },
+      select: { id: true, assigneeId: true, stageId: true },
+    });
+  }
+}
+```
+
+### Bước 1.2: Khai báo ở Chatbot/Inbox Module (ConversationHydrator)
+Đối với các thao tác đọc ghi trên các phiên hội thoại, Chatbot Module cung cấp `ConversationHydrator` để nạp dữ liệu check quyền ABAC cho nhân viên (ví dụ: Sales chỉ được quyền sửa/đóng cuộc chat do mình hoặc chi nhánh mình phụ trách):
+
+```typescript
+// src/modules/chatbot/services/conversation-hydrator.service.ts
+
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ResourceHydrator } from '../../../core/database/resource-hydrator.interface';
+import { ResourceHydratorRegistry } from '../../../core/database/resource-hydrator.registry';
+import { ConversationEntity } from '../entities/conversation.entity';
+
+@Injectable()
+export class ConversationHydrator implements ResourceHydrator, OnModuleInit {
+  constructor(
+    @InjectRepository(ConversationEntity)
+    private readonly conversationRepo: Repository<ConversationEntity>,
+    private readonly registry: ResourceHydratorRegistry,
+  ) {}
+
+  // Đăng ký tự động với tiền tố chatbot.conversation
+  onModuleInit() {
+    this.registry.register('chatbot.conversation', this);
+  }
+
+  async fetchResource(id: string): Promise<Record<string, any> | null> {
+    // Chỉ load các trường cơ bản phục vụ check quyền sở hữu và phân phối
+    return this.conversationRepo.findOne({
+      where: { id },
+      select: { id: true, assigneeId: true, customerId: true, channel: true },
     });
   }
 }
@@ -147,14 +183,14 @@ Tại module IAM, [PermissionsGuard](file:///d:/workspace/project/solavie/backen
 const request = context.switchToHttp().getRequest();
 const requiredPermissions = this.reflector.get<string[]>(PERMISSIONS_KEY, context.getHandler());
 
-// Giả sử permission yêu cầu là 'crm.lead.update'
+// Giả sử permission yêu cầu là 'crm.customer.write'
 for (const permission of requiredPermissions) {
   // Lấy ID tài nguyên từ URL params (e.g. request.params.id)
   const resourceId = request.params.id || request.body.resourceId; 
 
   if (resourceId) {
     // 1. Phân tích prefix (lấy tất cả trừ phần action cuối cùng)
-    // Ví dụ: 'crm.lead.update' -> 'crm.lead'
+    // Ví dụ: 'crm.customer.write' -> 'crm.customer'
     const lastDotIndex = permission.lastIndexOf('.');
     if (lastDotIndex > 0) {
       const resourcePrefix = permission.substring(0, lastDotIndex);

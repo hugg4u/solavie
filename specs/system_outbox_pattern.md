@@ -153,8 +153,26 @@ await this.outboxQueue.add('process_event', {
 
 ---
 
-## 6. Cleanup Cơ Sở Dữ Liệu (Garbage Collection)
-Cơ sở dữ liệu Outbox sẽ phình to rất nhanh. Bắt buộc mỗi module phải có một Cronjob Cleanup chạy hàng ngày (Daily):
 - Xoá Event `PROCESSED` quá 7 ngày.
 - Xoá Event `DEAD_LETTER` quá 30 ngày (Sau khi Admin đã audit). 
 Tham khảo hàm `purgeProcessedOutbox` trong `outbox.worker.ts`.
+
+---
+
+## 7. Tích Hợp Sự Kiện Cảnh Báo Circuit Breaker (Broadcasting Alert)
+
+Để đảm bảo tính tin cậy tuyệt đối của hệ thống thông tin liên lạc, khi chiến dịch gửi tin hàng loạt (Broadcasting) bị ngắt bởi cơ chế bảo vệ tự động (Circuit Breaker - do lỗi gửi tin liên tiếp quá 20 lần), hệ thống bắt buộc phải áp dụng Transactional Outbox Pattern để thông báo cho IT Admin:
+
+1.  **Kích hoạt Circuit Breaker (Broadcasting Worker):**
+    -   Khi Worker gửi tin hàng loạt và đếm số lỗi liên tục đạt ngưỡng **20 tin thất bại**:
+        -   Worker lập tức đổi trạng thái chiến dịch trong Database thành `FAILED` hoặc `PAUSED`.
+        -   Đồng thời, ghi nhận lỗi vào log của chiến dịch (`chat_broadcast_logs`).
+2.  **Lưu Outbox Event khẩn cấp:**
+    -   Cùng trong Transaction cập nhật trạng thái chiến dịch, ghi sự kiện `chat.broadcast.campaign_status_changed` vào bảng `chat_outbox_events` với trạng thái `PENDING`.
+    -   Payload sự kiện chứa lý do chi tiết (VD: `errorDetails: "Zalo OA token expired or Page blocked by Facebook"`).
+3.  **Relay & Tiêu thụ:**
+    -   Outbox Relay đẩy sự kiện lên Event Bus.
+    -   `NotificationModule` tiêu thụ sự kiện, lập tức gửi:
+        -   Cảnh báo In-App (WebSocket) hiển thị thông báo đỏ nhấp nháy trên Portal của Admin.
+        -   Fallback gửi Email khẩn qua AWS SES đến hộp thư quản trị viên của hệ thống Solavie.
+

@@ -80,54 +80,111 @@ export interface QueryHelperOptions {
 ---
 
 ## 4. Hướng Dẫn Tích Hợp Cho Các Module Khác
-
-Khi phát triển một module mới (ví dụ: CRM), lập trình viên làm theo 3 bước sau:
-
-### Bước 1: Tạo DTO Kế Thừa
+ 
+### 4.1. Tích Hợp Cho Module CRM (Quản lý Lead)
+ 
+#### Bước 1: Tạo DTO Kế Thừa
 ```typescript
 import { IsOptional, IsString, IsBooleanString } from 'class-validator';
 import { PaginationQueryDto } from 'src/core/dto/pagination.dto';
-
+ 
 export class CrmLeadListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
-
+ 
   @IsOptional()
   @IsString()
   status?: string; // Bộ lọc theo trạng thái Lead
-
+ 
   @IsOptional()
   @IsBooleanString()
   isHighValue?: string; // Bộ lọc Lead giá trị cao
 }
 ```
-
-### Bước 2: Tích Hợp Helper Trong Service
+ 
+#### Bước 2: Tích Hợp Helper Trong Service
 ```typescript
 import { TypeOrmQueryHelper } from 'src/core/database/typeorm-query.helper';
-
+ 
 async findAll(query: CrmLeadListQueryDto): Promise<PaginatedResponseDto<LeadEntity>> {
   const qb = this.leadRepository.createQueryBuilder('lead');
-
+ 
   TypeOrmQueryHelper.apply(qb, query, {
     alias: 'lead',
     searchFields: ['lead.title', 'lead.contactName', 'lead.phone'],
     filterableFields: ['status', 'isHighValue'], // Các trường khớp 100% với DTO và DB
   });
-
+ 
   const [data, total] = await qb.getManyAndCount();
   return new PaginatedResponseDto(data, total, query.page || 1, query.limit || 20);
 }
 ```
-
-### Bước 3: Đón Nhận Query Tham Số Trong Controller
+ 
+#### Bước 3: Đón Nhận Query Tham Số Trong Controller
 ```typescript
 @Get()
 async findAll(@Query() query: CrmLeadListQueryDto) {
   return this.crmLeadService.findAll(query);
 }
 ```
+
+### 4.2. Tích Hợp Cho Module Chatbot (Chiến Dịch Gửi Tin & Log Chi Tiết)
+
+Đối với các chiến dịch gửi tin hàng loạt, lượng log phát sinh có thể lên tới hàng chục vạn dòng cho mỗi chiến dịch. Việc ép buộc phân trang và tối ưu hóa câu lệnh query là tối quan trọng:
+
+#### 1. Quản lý Danh sách Chiến dịch (`chat_broadcast_campaigns`)
+```typescript
+// DTO truy vấn chiến dịch
+export class BroadcastCampaignListQueryDto extends PaginationQueryDto {
+  @IsOptional() @IsString() search?: string;
+  @IsOptional() @IsString() channel?: 'FACEBOOK' | 'ZALO';
+  @IsOptional() @IsString() status?: string;
+}
+
+// Service logic áp dụng Helper
+async findCampaigns(query: BroadcastCampaignListQueryDto): Promise<PaginatedResponseDto<BroadcastCampaignEntity>> {
+  const qb = this.campaignRepo.createQueryBuilder('campaign');
+  
+  TypeOrmQueryHelper.apply(qb, query, {
+    alias: 'campaign',
+    searchFields: ['campaign.name'],
+    filterableFields: ['channel', 'status'],
+  });
+  
+  const [data, total] = await qb.getManyAndCount();
+  return new PaginatedResponseDto(data, total, query.page || 1, query.limit || 20);
+}
+```
+
+#### 2. Truy vấn Log Gửi tin Chi tiết (`chat_broadcast_logs`)
+Với Log chi tiết, hệ thống cần hỗ trợ tìm kiếm theo Họ tên hoặc SĐT khách hàng (nằm bên bảng `crm_customers` được liên kết mềm):
+
+```typescript
+// DTO truy vấn log chi tiết
+export class BroadcastLogListQueryDto extends PaginationQueryDto {
+  @IsNotEmpty() @IsUUID() campaignId: string; // Bắt buộc lọc theo ID chiến dịch
+  @IsOptional() @IsString() search?: string;    // Tìm kiếm theo tên/SĐT khách hàng
+  @IsOptional() @IsString() status?: 'SENT' | 'FAILED' | 'SKIPPED';
+}
+
+// Service logic JOIN mềm và tìm kiếm đa trường
+async findCampaignLogs(query: BroadcastLogListQueryDto): Promise<PaginatedResponseDto<BroadcastLogEntity>> {
+  const qb = this.logRepo.createQueryBuilder('blog')
+    // Thực hiện INNER JOIN mềm để nạp thông tin khách hàng hỗ trợ tìm kiếm
+    .innerJoin('crm_customers', 'customer', 'blog.customer_id = customer.id');
+    
+  TypeOrmQueryHelper.apply(qb, query, {
+    alias: 'blog',
+    searchFields: ['customer.full_name', 'customer.phone_number'],
+    filterableFields: ['campaignId', 'status'],
+  });
+  
+  const [data, total] = await qb.getManyAndCount();
+  return new PaginatedResponseDto(data, total, query.page || 1, query.limit || 20);
+}
+```
+
 
 ---
 
