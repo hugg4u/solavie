@@ -48,6 +48,18 @@ erDiagram
 
     %% Chatbot Module
     chat_conversations ||--o{ chat_messages : contains
+    chat_flows ||--o{ chat_nodes : owns
+    chat_flows ||--o{ chat_keywords : triggered_by
+    chat_sequences ||--o{ chat_sequence_steps : defines
+    chat_sequences ||--o{ chat_sequence_subscribers : tracks
+    chat_sequence_steps ||--o{ chat_sequence_subscribers : active_at
+    crm_customers ||--o{ chat_sequence_subscribers : subscribes
+    chat_flows ||--o{ chat_growth_tools : triggers
+    chat_flows ||--o{ chat_broadcast_campaigns : executes
+    chat_broadcast_campaigns ||--o{ chat_broadcast_logs : logs
+    crm_customers ||--o{ chat_broadcast_logs : targeted
+    iam_users ||--o{ chat_flows : creates
+    iam_users ||--o{ chat_broadcast_campaigns : creates
     chat_conversations {
         uuid id PK
         string channel
@@ -62,6 +74,91 @@ erDiagram
         uuid conversation_id FK
         string sender_type
         string content
+        timestamp created_at
+    }
+    chat_flows {
+        uuid id PK
+        string name
+        text description
+        boolean is_active
+        uuid created_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_nodes {
+        uuid id PK
+        uuid flow_id FK
+        string type
+        jsonb content
+        uuid next_node_id FK
+        timestamp created_at
+    }
+    chat_keywords {
+        uuid id PK
+        string keyword UK
+        string match_type
+        uuid flow_id FK
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_sequences {
+        uuid id PK
+        string name
+        boolean is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_sequence_steps {
+        uuid id PK
+        uuid sequence_id FK
+        integer delay_seconds
+        uuid flow_id FK
+        integer sort_order
+        timestamp created_at
+    }
+    chat_sequence_subscribers {
+        uuid id PK
+        uuid sequence_id FK
+        uuid customer_id FK
+        uuid current_step_id FK
+        string status
+        timestamp next_execution_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_growth_tools {
+        uuid id PK
+        string name
+        string type
+        uuid flow_id FK
+        string ref_parameter UK
+        jsonb payload
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_broadcast_campaigns {
+        uuid id PK
+        string name
+        string channel
+        uuid flow_id FK
+        jsonb target_filters
+        timestamp scheduled_at
+        string status
+        integer total_targets
+        integer sent_count
+        integer failed_count
+        uuid uploader_id FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    chat_broadcast_logs {
+        uuid id PK
+        uuid campaign_id FK
+        uuid customer_id FK
+        string status
+        text error_message
+        timestamp sent_at
         timestamp created_at
     }
     rag_documents {
@@ -386,7 +483,7 @@ erDiagram
 | Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
 | --- | --- | --- | --- |
 | `id` | UUID | PRIMARY KEY | Định danh quyền |
-| `action` | VARCHAR(100) | UNIQUE, NOT NULL | Mã quyền (ví dụ: `lead:read`, `lead:create`) |
+| `action` | VARCHAR(100) | UNIQUE, NOT NULL | Mã quyền (ví dụ: `crm.customer.read`, `crm.customer.write`) |
 | `description` | TEXT | | Mô tả chức năng của quyền |
 
 #### Bảng `iam_policies` (ABAC Rules - Quy tắc thuộc tính động)
@@ -485,16 +582,109 @@ Hỗ trợ kiến trúc **Hierarchical Chunking** thông qua khóa ngoại tự 
 | `latency_ms` | INTEGER | NOT NULL | Thời gian phản hồi |
 | `created_at` | TIMESTAMP | Default NOW() | Thời điểm ghi nhận kết quả |
 
-#### Bảng `chat_outbox_events` (Đệm sự kiện Outbox Pattern)
+#### Bảng `chat_flows` (Kịch bản luồng tin nhắn tự do)
 | Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
 | --- | --- | --- | --- |
-| `id` | UUID | PRIMARY KEY, gen_random_uuid() | Định danh sự kiện |
-| `event_type` | VARCHAR(100) | NOT NULL | Loại sự kiện (`lead.extracted`, `chat.handover_requested`...) |
-| `payload` | JSONB | NOT NULL | Dữ liệu sự kiện sẽ publish |
-| `status` | VARCHAR(20) | Default 'PENDING' | Trạng thái: `PENDING`, `PROCESSED`, `FAILED` |
-| `retry_count` | INTEGER | Default 0 | Số lần thử đẩy lại vào Event Bus |
-| `created_at` | TIMESTAMP | Default NOW() | Thời điểm sinh sự kiện |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh kịch bản |
+| `name` | VARCHAR(255) | NOT NULL | Tên kịch bản (VD: "Tư vấn Solar VIP") |
+| `description` | TEXT | | Mô tả luồng |
+| `is_active` | BOOLEAN | Default TRUE | Trạng thái hoạt động |
+| `created_by` | UUID | NULLABLE | Người tạo kịch bản (Soft link `iam_users.id`) |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật gần nhất |
+
+#### Bảng `chat_nodes` (Các node trong luồng kịch bản)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh node trong luồng |
+| `flow_id` | UUID | FOREIGN KEY (chat_flows.id) ON DELETE CASCADE | Thuộc kịch bản nào |
+| `type` | VARCHAR(50) | NOT NULL | Loại node (`MESSAGE`, `CAROUSEL`, `ACTION`, `CONDITION`) |
+| `content` | JSONB | NOT NULL | Dữ liệu cấu trúc của node (Văn bản, nút bấm, tags cần gắn, key CRM cần gán, v.v.) |
+| `next_node_id` | UUID | NULLABLE | Node tiếp theo (Soft link `chat_nodes.id` tự trỏ) |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+
+#### Bảng `chat_keywords` (Từ khóa kích hoạt kịch bản)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh cấu hình từ khóa |
+| `keyword` | VARCHAR(255) | UNIQUE, NOT NULL | Từ khóa cần so khớp (VD: "baogia", "tu van") |
+| `match_type` | VARCHAR(50) | NOT NULL | Cơ chế khớp (`EXACT`, `CONTAINS`, `STARTS_WITH`) |
+| `flow_id` | UUID | Soft link `chat_flows.id`, NOT NULL | Kích hoạt kịch bản nào |
+| `is_active` | BOOLEAN | Default TRUE | Bật/tắt so khớp |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật |
+
+#### Bảng `chat_sequences` (Chiến dịch chuỗi chăm sóc bám đuổi)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh chuỗi chăm sóc |
+| `name` | VARCHAR(255) | NOT NULL | Tên chuỗi (VD: "Bám đuổi Lead đăng ký Solar 7 ngày") |
+| `is_active` | BOOLEAN | Default TRUE | Trạng thái hoạt động |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật |
+
+#### Bảng `chat_sequence_steps` (Các bước gửi tin trong chuỗi chăm sóc)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh bước chăm sóc |
+| `sequence_id` | UUID | FOREIGN KEY (chat_sequences.id) ON DELETE CASCADE | Thuộc chuỗi nào |
+| `delay_seconds` | INTEGER | NOT NULL | Thời gian chờ từ bước trước (hoặc từ khi vào chuỗi nếu là bước 1) |
+| `flow_id` | UUID | Soft link `chat_flows.id`, NOT NULL | Kịch bản kịch hoạt cho bước này |
+| `sort_order` | INTEGER | NOT NULL | Thứ tự thực thi của bước |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
+
+#### Bảng `chat_sequence_subscribers` (Danh sách khách hàng nhận chuỗi chăm sóc)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh đăng ký |
+| `sequence_id` | UUID | Soft link `chat_sequences.id`, NOT NULL | Đăng ký chuỗi nào |
+| `customer_id` | UUID | Soft link `crm_customers.id`, NOT NULL | Khách hàng đăng ký |
+| `current_step_id`| UUID | Soft link `chat_sequence_steps.id`, NULLABLE | Bước hiện tại hoặc bước tiếp theo đang chờ |
+| `status` | VARCHAR(50) | Default 'ACTIVE' | Trạng thái (`ACTIVE`, `COMPLETED`, `UNSUBSCRIBED`) |
+| `next_execution_at`| TIMESTAMP| NULLABLE | Thời điểm BullMQ sẽ kích hoạt bước tiếp theo |
+| `created_at` | TIMESTAMP | Default NOW() | Thời gian vào chuỗi |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời gian cập nhật gần nhất |
+| **UNIQUE** | | `(sequence_id, customer_id)` | Mỗi khách hàng chỉ đăng ký một chuỗi 1 lần |
+
+#### Bảng `chat_growth_tools` (Công cụ tăng trưởng)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh công cụ tăng trưởng |
+| `name` | VARCHAR(255) | NOT NULL | Tên công cụ (VD: "Link Ref Banner Facebook") |
+| `type` | VARCHAR(50) | NOT NULL | Phân loại (`QR_CODE`, `REF_LINK`) |
+| `flow_id` | UUID | Soft link `chat_flows.id` | Kịch bản sẽ kích hoạt khi khách quét/click |
+| `ref_parameter` | VARCHAR(100) | UNIQUE, NOT NULL | Tham số ref định danh (VD: `fb_ads_june`) |
+| `payload` | JSONB | Default '{}' | Metadata chứa link ảnh QR, thống kê click... |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
+| `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật |
+
+#### Bảng `chat_broadcast_campaigns` (Chiến dịch gửi tin hàng loạt)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh chiến dịch |
+| `name` | VARCHAR(255) | NOT NULL | Tên chiến dịch (VD: "Khuyến mãi pin solar Đồng Nai") |
+| `channel` | VARCHAR(50) | NOT NULL | Kênh gửi (`FACEBOOK`, `ZALO`) |
+| `flow_id` | UUID | Soft link `chat_flows.id`, NOT NULL | Kịch bản gửi hàng loạt |
+| `target_filters` | JSONB | Default '{}' | JSON bộ lọc khách hàng từ CRM (VD: `{ "location": "Dong Nai" }`) |
+| `scheduled_at` | TIMESTAMP | NULLABLE | Lịch gửi. Nếu NULL tức là gửi ngay |
+| `status` | VARCHAR(50) | Default 'PENDING' | Trạng thái chiến dịch (`PENDING`, `PROCESSING`, `COMPLETED`, `PAUSED`, `FAILED`) |
+| `total_targets` | INTEGER | Default 0 | Tổng số khách hàng mục tiêu thỏa mãn bộ lọc |
+| `sent_count` | INTEGER | Default 0 | Số tin gửi thành công |
+| `failed_count` | INTEGER | Default 0 | Số tin gửi thất bại |
+| `uploader_id` | UUID | Soft link `iam_users.id` | Quản trị viên lên chiến dịch |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm tạo |
 | `updated_at` | TIMESTAMP | Default NOW() | Thời điểm cập nhật trạng thái |
+
+#### Bảng `chat_broadcast_logs` (Nhật ký gửi tin chiến dịch)
+| Tên Trường | Kiểu Dữ Liệu | Thuộc Tính | Mô Tả |
+| --- | --- | --- | --- |
+| `id` | UUID | PRIMARY KEY, Default gen_random_uuid() | Định danh log |
+| `campaign_id` | UUID | Soft link `chat_broadcast_campaigns.id`, NOT NULL | Thuộc chiến dịch nào |
+| `customer_id` | UUID | Soft link `crm_customers.id`, NOT NULL | Khách hàng mục tiêu nhận tin |
+| `status` | VARCHAR(50) | NOT NULL | Trạng thái gửi (`SENT`, `FAILED`, `SKIPPED`) |
+| `error_message` | TEXT | | Lý do lỗi chi tiết nếu thất bại |
+| `sent_at` | TIMESTAMP | NULLABLE | Thời điểm gửi thực tế |
+| `created_at` | TIMESTAMP | Default NOW() | Thời điểm ghi nhận log |
 
 ---
 

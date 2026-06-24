@@ -63,7 +63,7 @@ Hệ thống áp dụng mô hình lai **RBAC + ABAC** (Role-Based & Attribute-Ba
 * **Database Schema**:
   - `users`: Tài khoản người dùng hệ thống.
   - `roles`: Vai trò (Admin, Branch_Manager, Solar_Sales, Tech_Support).
-  - `permissions`: Quyền hạn cụ thể (`lead:read`, `lead:create`, `lead:write`).
+  - `permissions`: Quyền hạn cụ thể (ví dụ: `crm.customer.read`, `crm.customer.write`).
   - `policies` (ABAC Rules): Quy tắc thuộc tính (ví dụ: `sales_only` quy định Sales chỉ được sửa dữ liệu do mình phụ trách, `branch_only` quy định quản lý chi nhánh chỉ xem được dữ liệu của chi nhánh đó).
   - `role_permissions`: Bảng liên kết quyền và vai trò.
 * **Tối ưu hóa**: Danh sách quyền hạn và quy tắc ABAC sau khi biên dịch được lưu vào **Redis Cache** (`user:permissions:${userId}`). Cache tự động bị xóa (invalidation) khi có bất kỳ thay đổi nào liên quan đến vai trò/phân quyền để đảm bảo cập nhật tức thì.
@@ -101,28 +101,45 @@ Các Adapter kết nối API sẽ không được khởi tạo sẵn khi ứng d
 
 ## 4. Các Yêu Cầu Chức Năng Chi Tiết (Phase 1)
 
-### 4.1. Module Đa Kênh (Omnichannel Inbox)
-* Tích hợp Facebook Fanpage, Messenger và Zalo OA.
-* Đồng bộ tin nhắn tập trung về một giao diện chat.
-* **Cơ chế Hybrid Chat & Fallback của Chatbot**:
-  - Mặc định AI Chatbot sẽ tiếp quản cuộc hội thoại.
-  - Khi khách hàng yêu cầu gặp tư vấn viên hoặc AI không tìm được câu trả lời phù hợp trong Knowledge Base (sau 2 lần fallback), AI sẽ tự động gắn tag "Human_Required", gửi thông báo (Notification) thời gian thực cho nhân viên và chuyển trạng thái sang "Manual".
-  - Chatbot gửi một tin nhắn phản hồi lịch sự: *"Hiện tại các tư vấn viên kỹ thuật đang bận hoặc ngoài giờ làm việc. Chúng tôi đã chuyển yêu cầu của bạn đến kỹ sư hỗ trợ và sẽ phản hồi sớm nhất qua Zalo/SĐT này."*
-  - Chatbot tạm dừng tự động trả lời cho đến khi nhân viên tiếp quản và trả quyền lại cho AI.
+### 4.1. Module Đa Kênh (Omnichannel Inbox & Gateway)
+*   **Tích hợp đa nền tảng:** Kết nối Fanpage Facebook, Messenger và Zalo OA tập trung về một giao diện duy nhất thông qua Lớp trừu tượng Gateway.
+*   **Zalo OA Token Sync Worker:** Tự động chạy ngầm làm mới (refresh) access token của Zalo OA mỗi 20 giờ để duy trì kết nối 24/7.
+*   **Quản lý chính sách 24h:**
+    *   Tự động theo dõi thời gian tương tác cuối cùng của khách.
+    *   Chặn gửi tin quảng cáo ngoài 24h cho cả Facebook và Zalo.
+    *   Tự động đính kèm Message Tags (`CONFIRMED_EVENT_UPDATE` cho đặt lịch và `HUMAN_AGENT` cho nhân viên chat tay) khi gửi tin ngoài cửa sổ tương tác.
+*   **Tin giao dịch ZBS & ZNS:**
+    *   Gửi tin giao dịch Zalo Business Services (ZBS) v3.0 dạng bảng thông số cấu trúc key-value.
+    *   Gửi tin nhắn chăm sóc qua số điện thoại ZNS khi khách ngoài cửa sổ tương tác, tự động fallback sang Email AWS SES nếu số điện thoại không dùng Zalo.
+*   **Cơ chế Hybrid Chat & Fallback của Chatbot**:
+    *   Định tuyến tin nhắn thông minh dựa trên trạng thái hội thoại (`bot_state`: `AUTOMATIC` | `FLOW_EXECUTING` | `MANUAL`).
+    *   Tự động tạm dừng kịch bản tĩnh và chuyển sang AI Agent khi khách gõ chữ tự do lạc đề.
+    *   Tự động bàn giao cho nhân viên chat tay (`MANUAL`) khi phát hiện yêu cầu hỗ trợ hoặc sau 2 lần AI gặp lỗi ảo giác/không tìm thấy bối cảnh trong Knowledge Base.
+    *   Gửi ngay tin nhắn phản hồi lịch sự thông báo chuyển giao: *"Yêu cầu tư vấn của anh/chị đã được chuyển đến kỹ sư hỗ trợ và sẽ phản hồi sớm nhất..."* để khách hàng không phải chờ đợi trong im lặng.
+    *   Cung cấp API bàn giao lại cho AI (`Handback API`) bảo vệ bởi ABAC (chỉ assignee hoặc Admin/Manager được gọi).
 
 ### 4.2. Module AI Chatbot & Knowledge Base (RAG)
-* Quản lý Knowledge Base: Cho phép upload các tài liệu hướng dẫn kỹ thuật pin/inverter (Growatt, Huawei, Canadian Solar...).
-* Hybrid Search RAG: Tìm kiếm kết hợp Vector Search và Keyword Search để tìm mã lỗi chính xác.
-* Trích xuất thông tin: AI tự động nhận diện diện tích mái, hóa đơn tiền điện, vị trí lắp đặt của khách hàng qua hội thoại để tạo Lead trong CRM.
-* **Bảo Mật & Tuân Thủ Dữ Liệu Khách Hàng (Guardrails)**: Áp dụng cơ chế Data Masking (ẩn danh bằng Regex) để che mờ tất cả Số điện thoại, Email, Thẻ tín dụng thành dạng `[REDACTED]` trước khi gửi dữ liệu hội thoại ra ngoài tới API của OpenAI/Google. Điều này bắt buộc để đảm bảo quyền riêng tư của khách hàng.
-* **Bộ lọc câu hỏi ngoài phạm vi (Out-Of-Domain Filter)**: Thiết lập bộ lọc 2 lớp (Lọc Regex tĩnh cho các câu chào xã giao và Lọc LLM Classifier tích hợp trong Query Rewriter chạy ở JSON Mode) để ngăn chặn các câu hỏi lạc đề hoặc nỗ lực Jailbreak, tự động gửi phản hồi từ chối mẫu tĩnh và ngắt luồng xử lý RAG/Agent nhằm bảo vệ ngân sách chi phí AI.
-
+*   **Quản lý Knowledge Base:** Cho phép tải lên tài liệu kỹ thuật thiết bị solar (Growatt, Canadian Solar...), tự động chia nhỏ và index bằng cơ chế RAG phân cấp (Parent/Child Chunks).
+*   **Tìm kiếm Lai RAG + RRF:** Kết hợp Vector Search (Dense) bằng PgVector HNSW Index và Full-Text Search (Sparse) tiếng Việt bằng GIN Index trên PostgreSQL, gộp thứ hạng bằng thuật toán RRF ($k=60$) để nâng cao độ chính xác.
+*   **Trích xuất thực thể (NER):** Sử dụng LLM ở JSON Mode / Function Calling tự động bóc tách 4 thông số nhu cầu Solar (tiền điện, diện tích mái, địa điểm, công suất đề xuất) đồng bộ sang CRM.
+*   **Bảo mật & Rào chắn (PII Guardrails):** Che giấu tự động thông tin nhạy cảm của khách hàng (SĐT, Email, Số thẻ) thành `[PHONE_REDACTED]`, `[EMAIL_REDACTED]` trước khi gửi lên API LLM. Quét đầu ra chống ảo giác giá và từ cấm thô tục.
+*   **Bộ lọc ngoài phạm vi (OOD Filter):** Lọc Regex tĩnh cho lời chào xã giao (Bypass LLM) và bộ phân loại Classifier động (LLM JSON Mode) để từ chối các câu hỏi lạc đề, bảo vệ ngân sách chi phí token.
 
 ### 4.3. Module CRM Quản Lý Khách Hàng & Nhu Cầu
-* **Quản Lý Lead & Customer**: Lưu trữ thông tin cá nhân và nhu cầu lắp đặt (phân rã thành các trường dữ liệu riêng biệt).
-* **Bộ tính toán ROI tự động**: Tích hợp công cụ tính sản lượng điện ước tính và ROI dựa trên địa phương (giờ nắng trung bình tại Việt Nam) và dữ liệu mái nhà.
-* **Thông báo thời gian thực (Real-time Notification)**: Ngay khi AI thu thập đủ thông tin nhu cầu và tự tạo Lead trên CRM, hệ thống chỉ lưu thông tin Lead và kết quả ROI ước tính trong DB, đồng thời gửi thông báo tức thời cho nhân viên Sales qua Web Dashboard để họ chủ động gọi điện tư vấn trực tiếp (không tự động gửi báo giá thô qua chat).
-* **Giao diện cấu hình AI**: Chọn Provider, Model (đồng bộ từ danh sách LiteLLM) và cấu hình Prompt cho chatbot.
+*   **Quản lý Lead & Customer:** Lưu trữ thông tin cá nhân và nhu cầu Solar phân rã thành các trường dữ liệu riêng biệt.
+*   **Bộ tính toán ROI tự động:** Tự động tính toán sản lượng điện và thời gian hoàn vốn dựa trên số giờ nắng trung bình từng tỉnh thành Việt Nam.
+*   **Cơ chế Gộp hồ sơ (Merge Profile):** Tự động gộp các phiên chat và thông tin nhu cầu khi phát hiện trùng số điện thoại giữa Facebook và Zalo, sử dụng khóa phân tán Redis để tránh race condition khi webhook gọi song song.
+*   **Thông báo thời gian thực:** Đồng bộ sự kiện gán Lead và cập nhật lịch hẹn sang giao diện Dashboard của nhân viên Sales.
+
+### 4.4. Module Tự Động Hóa & Gửi Tin Hàng Loạt (Automation & Broadcasting Engine)
+*   **Luồng tin nhắn tự do (Flows & Nodes):** Cho phép Admin tự do tạo mới và sửa đổi kịch bản hội thoại từ đầu qua giao diện *Form-based Flow Composer UI*. Có thể thêm các khối tin nhắn văn bản, nhóm thẻ cuộn carousel, khối hành động (gắn tag CRM, phân công nhân viên) và cấu hình điều hướng node động bằng dropdown.
+*   **Từ khóa kích hoạt (Keywords):** Cho phép cấu hình các từ khóa khớp chính xác, chứa từ khóa hoặc bắt đầu bằng từ khóa để tự kích hoạt Flow mà không tiêu hao chi phí AI.
+*   **Chuỗi chăm sóc (Sequences):** Tự động gửi tin nhắn bám đuổi theo mốc thời gian trì hoãn (ngày/giờ) thiết lập trên Timeline, chạy qua hàng đợi trì hoãn BullMQ.
+*   **Công cụ tăng trưởng (Growth Tools):** Sinh Ref URL và mã QR tương ứng dẫn trực tiếp khách hàng vào một Flow kịch bản xác định từ các kênh tiếp thị bên ngoài.
+*   **Gửi tin hàng loạt (Broadcasting Engine):** Lên chiến dịch gửi tin hàng loạt đến tệp khách hàng lọc từ CRM. Sử dụng BullMQ để xử lý bất đồng bộ, chia lô (batching 50 khách) và tự động giãn cách (Facebook delay 1s, Zalo delay 0.5s) để chống spam.
+    *   *Giờ giới nghiêm (Quiet Hours):* Tự động hoãn và dời lịch gửi sang 08:00 sáng hôm sau đối với các tin nhắn rơi vào khung giờ 22:00 - 07:00.
+    *   *Ngắt bảo vệ (Circuit Breaker):* Tự động tạm dừng chiến dịch và gửi cảnh báo Admin khi số tin nhắn gửi thất bại liên tiếp đạt ngưỡng 20 tin (do sập token hoặc page bị khóa).
+*   **Giao diện Quản trị và Thống kê:** Hiển thị biểu đồ báo cáo tỷ lệ gửi thành công, thất bại, tỷ lệ mở xem và click nút hành động của chiến dịch.
 
 ---
 

@@ -102,3 +102,73 @@ Khi nhân viên kéo/thả khách hàng qua các cột trên Kanban board, hệ 
 1.  Cập nhật `stage_id` của khách hàng.
 2.  Lấy thông tin `progress_percentage` của `stage` mới để cập nhật tiến độ tổng thể của khách hàng đó.
 3.  Tự động ghi log hoạt động vào bảng `crm_activities` để theo dõi lịch sử chuyển trạng thái.
+
+---
+
+## 4. Thiết Kế Cơ Chế Gộp Hồ Sơ Tối Ưu (Merge Profile Mechanism)
+
+Khi khách hàng tương tác qua nhiều kênh (Facebook Messenger và Zalo OA), hệ thống ban đầu sẽ khởi tạo các hồ sơ độc lập dựa trên định danh MXH (`facebook_psid`, `zalo_user_id`). Khi AI Chatbot hoặc nhân viên trích xuất được số điện thoại thực tế của khách hàng, hệ thống sẽ tự động kích hoạt cơ chế gộp hồ sơ trùng số điện thoại (`Merge Profile`) để hợp nhất dữ liệu về một mối duy nhất.
+
+### 4.1. Quy Trình Kích Hoạt & Khóa Phân Tán (Distributed Lock)
+
+Khi có sự kiện cập nhật số điện thoại cho khách hàng:
+1.  `MergeProfileService` cố gắng chiếm khóa phân tán Redis `lock:merge:phone:${phone}` với TTL 10 giây. Nếu không lấy được khóa (do luồng webhook khác đang thực hiện gộp cho chính số điện thoại này), hệ thống sẽ từ chối xử lý và đưa job vào hàng đợi thử lại (Retry Queue) sau 2 giây.
+2.  Tìm kiếm tất cả các bản ghi trong bảng `crm_customers` trùng số điện thoại `${phone}`.
+3.  Nếu phát hiện từ 2 hồ sơ trở lên trùng số điện thoại, tiến hành quy trình hợp nhất.
+
+```
+[Webhook Facebook] ──> Cập nhật SĐT ──> [MergeProfileService] ──> Chiếm lock Redis thành công?
+[Webhook Zalo]     ──> Cập nhật SĐT ──> [Đợi chiếm lock...]              │
+                                                                         ▼
+                                                              [Xác định Primary Profile]
+                                                                         │
+                                                                         ▼
+                                                               [Gộp định danh Zalo/FB]
+                                                                         │
+                                                                         ▼
+                                                              [Hợp nhất Conversations]
+                                                                         │
+                                                                         ▼
+                                                             [Giải quyết xung đột Custom fields]
+                                                                         │
+                                                                         ▼
+                                                            [Giải phóng lock & Soft delete phụ]
+```
+
+### 4.2. Thuật Toán Xác Định Hồ Sơ Chính (Primary Profile)
+
+Hệ thống chấm điểm 2 hồ sơ trùng lặp để chọn ra hồ sơ chính (`Primary Profile`) và hồ sơ phụ (`Secondary Profile`):
+-   **Tiêu chí 1: Người tiếp quản.** Hồ sơ đã được phân công cho nhân viên Sales (`assignee_id IS NOT NULL`) được ưu tiên làm hồ sơ chính.
+-   **Tiêu chí 2: Mức độ hoàn thiện dữ liệu.** Hồ sơ có nhiều trường nhu cầu Solar trong `custom_fields` hơn sẽ được ưu tiên.
+-   **Tiêu chí 3: Thời điểm tạo.** Nếu hai tiêu chí trên tương đương, hồ sơ có `created_at` nhỏ hơn (tạo trước) sẽ được chọn làm hồ sơ chính.
+
+Hồ sơ còn lại được xác định là hồ sơ phụ (`Secondary Profile`).
+
+### 4.3. Giải Quyết Xung Đột Thuộc Tính Nhu Cầu Solar (Data Conflict Resolution)
+
+Để tránh mất dữ liệu lịch sử quan trọng của khách hàng khi gộp, hệ thống áp dụng nguyên tắc:
+1.  **Hợp nhất mảng/JSON:** Các trường trong `custom_fields` và `roi_estimation` sẽ được gộp chung. Nếu cùng một khóa thuộc tính động (VD: `monthly_bill` - tiền điện) có giá trị khác nhau:
+    -   Ưu tiên giữ lại giá trị của hồ sơ có thời gian cập nhật mới nhất (`updated_at`).
+    -   Tất cả các giá trị cũ của hồ sơ phụ sẽ được tự động chuyển đổi thành một bản ghi ghi chú mới (bảng `crm_customer_notes`) đính kèm vào hồ sơ chính với định dạng JSON:
+        ```json
+        {
+          "type": "profile_merge_snapshot",
+          "secondary_customer_id": "uuid-phu-123",
+          "merged_fields": {
+            "monthly_bill": "2,500,000đ",
+            "roof_area": "80m2"
+          },
+          "note": "Hồ sơ được tự động gộp từ tài khoản Zalo OA vào ngày 2026-06-24."
+        }
+        ```
+2.  **Hợp nhất Định Danh Mạng Xã Hội:** Cột `facebook_psid` và `zalo_user_id` của hồ sơ phụ sẽ được chuyển sang cập nhật vào hồ sơ chính.
+
+### 4.4. Hợp Nhất Phiên Hội Thoại & Dòng Hoạt Động (Conversations & Activity Merge)
+
+Sau khi xác định hồ sơ chính và phụ:
+1.  Backend cập nhật cột `customer_id` trong bảng `chat_conversations` của tất cả các cuộc hội thoại thuộc hồ sơ phụ trỏ về hồ sơ chính. Điều này giúp nhân viên Sales xem được toàn bộ lịch sử trò chuyện trên mọi kênh của khách hàng ngay trên một dòng thời gian Inbox duy nhất.
+2.  Cập nhật cột `customer_id` trong bảng `crm_activities` từ hồ sơ phụ sang hồ sơ chính.
+3.  Thực hiện **Soft-delete (hoặc Hard-delete)** hồ sơ phụ trong bảng `crm_customers` bằng cách đánh dấu trạng thái xóa hoặc cập nhật `phone_number` thành `NULL` kèm hậu tố `_merged` để giải phóng index unique.
+4.  Bắn sự kiện Outbox `crm.profile.merged` chứa payload `{ primary_customer_id, secondary_customer_id }`.
+5.  Gateway WebSocket lắng nghe sự kiện này và gửi tín hiệu cập nhật thời gian thực đến trình duyệt của Sales Rep để tự động tải lại danh sách khách hàng và hội thoại mà không cần F5.
+

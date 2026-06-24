@@ -164,3 +164,38 @@ export class TypingLockService {
   }
 }
 ```
+
+---
+
+## 4. Bảng Quy Hoạch Phân Bổ Key & Hàng Đợi (Queue & Key Allocation Table)
+
+Dưới đây là bảng quy hoạch chi tiết giúp các kỹ sư lập trình phân biệt rõ ràng vị trí lưu trữ và cấu hình tương ứng trong mã nguồn NestJS:
+
+### 4.1. Instance `redis-cache` (Cổng 6379 | allkeys-lru)
+
+Chỉ lưu trữ các dữ liệu có tính chất tạm thời, không gây ảnh hưởng nghiêm trọng đến tính đúng đắn của luồng nghiệp vụ nếu bị xóa sớm khi RAM đầy:
+
+| Key Pattern | Loại Dữ Liệu | Module Sử Dụng | Mục Đích |
+| --- | --- | --- | --- |
+| `lock:merge:phone:${phone}` | String | CRM | Khóa phân tán tránh race condition khi gộp trùng hồ sơ khách hàng. |
+| `lock:conversation:${conversationId}` | String | Chatbot | Khóa chống double-texting khi AI Agent đang suy nghĩ. |
+| `buffer:conversation:${conversationId}` | List | Chatbot | Bộ đệm tạm lưu các tin nhắn dồn dập trước khi debounce. |
+| `cooldown:provider:${providerId}` | String | Gateway (LLM) | Đánh dấu tạm dừng gọi model provider do lỗi kết nối/sập API. |
+| `errors:provider:${providerId}` | String (Counter)| Gateway (LLM) | Đếm số lỗi liên tiếp của model provider để kích hoạt failover. |
+| `lock:typing:conversation:${conversationId}` | String | Agent Inbox | Khóa hiển thị trạng thái "đang gõ" của nhân viên hỗ trợ. |
+| `user:permissions:${userId}` | String (JSON) | IAM | Bộ nhớ cache lưu danh sách quyền hạn động của nhân viên. |
+
+### 4.2. Instance `redis-queue` (Cổng 6380 | noeviction)
+
+Lưu trữ các dữ liệu hàng đợi có cấu trúc của BullMQ. Dữ liệu này bắt buộc phải tồn tại bền vững để đảm bảo không bị thất thoát job:
+
+| Tên Hàng Đợi (Queue Name) | Kiểu Job | Module Sử Dụng | Mục Đích |
+| --- | --- | --- | --- |
+| `solavie:chatbot-debounce` | Delay Job | Chatbot | Chờ 3-5 giây để gộp các tin nhắn liên tiếp của khách hàng trước khi chạy bot. |
+| `solavie:chatbot-followup` | Delay Job | Chatbot | Hàng đợi nhắc nhở tự động (follow-up) sau khi kết thúc chat 15-30 phút. |
+| `solavie:chatbot-sequence` | Delay Job | Chatbot | Thực thi các bước trì hoãn trong kịch bản chuỗi chăm sóc khách hàng. |
+| `solavie:facebook-broadcast` | Immediate Job | Chatbot | Chiến dịch gửi tin nhắn hàng loạt qua API Facebook Messenger. |
+| `solavie:zalo-broadcast` | Immediate Job | Chatbot | Chiến dịch gửi tin nhắn hàng loạt qua API Zalo OA (ZBS/ZNS). |
+| `solavie:notification-tier2-transactional` | Immediate Job | Notification | Gửi thông báo tức thì (Email AWS SES, ZNS giao dịch). |
+| `solavie:notification-tier3-scheduled` | Delay Job | Notification | Gửi các lịch nhắc nhở hẹn đã đặt trước. |
+

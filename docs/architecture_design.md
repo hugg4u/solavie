@@ -33,7 +33,7 @@
 
 ## 2. Bản Vẽ Kiến Trúc & Luồng Dữ Liệu (System Architecture Diagram)
 
-Dưới đây là sơ đồ kiến trúc Modular Monolith được thiết kế cô lập, sẵn sàng chuyển đổi thành Microservices:
+Dưới đây là sơ đồ kiến trúc Modular Monolith được thiết kế cô lập, thể hiện sự phối hợp giữa kịch bản tĩnh (Flow Executor), AI Agent Engine, hàng đợi BullMQ cho Broadcasting/Sequence và ZaloTokenSyncWorker:
 
 ```mermaid
 graph TD
@@ -43,13 +43,36 @@ graph TD
     Admin[Admin Web UI] -->|HTTP/WS APIs| GatewayAPI[Gateway Module]
 
     subgraph Solavie Modular Monolith [NestJS Application Core]
-        %% Modules
+        %% Gateway Workers
+        subgraph Gateway Module Context
+            GW
+            ZTSW[ZaloTokenSyncWorker] -->|Refresh Token 20h| DB_GW_Conf[(DB: gw_channel_configurations)]
+        end
+
+        %% Event Broker
         GW -->|Emit: message.received| EventBroker[Event Broker / Redis Pub/Sub]
         
-        EventBroker -->|Subscribe: message.received| CB[Chatbot Orchestrator Module]
+        %% Chatbot Module Context
+        subgraph Chatbot Module Context
+            CB[Chatbot Orchestrator Service]
+            
+            %% Sub-Engines
+            FEE[Flow Executor Engine]
+            AAE[AI Agent Engine]
+            KWM[Keyword Matcher]
+            
+            CB --> KWM
+            KWM -->|Match Found| FEE
+            KWM -->|No Match / Fallback| AAE
+            
+            FEE -->|Read Script| DB_Chat_Flow[(DB: chat_flows / chat_nodes)]
+            AAE -->|Query Knowledge| DB_Vector[(DB: PgVector / RAG Knowledge)]
+        end
+        
+        EventBroker -->|Subscribe: message.received| CB
         EventBroker -->|Subscribe: message.received| IB[Agent Inbox Module]
         
-        CB -->|Internal API Request| GatewayLLM[LLM Gateway / LiteLLM Proxy Container]
+        AAE -->|Internal API Request| GatewayLLM[LLM Gateway / LiteLLM Proxy Container]
         GatewayLLM -->|API Request| AI_Adapter[AI Core Service / External Providers]
         
         CB -->|Emit: lead.extracted| EventBroker
@@ -62,28 +85,37 @@ graph TD
         EventBroker -->|Subscribe: lead.extracted| IAM[IAM Module]
         EventBroker -->|Subscribe: appointment.confirmed| CRM
         
+        %% CRM Merge Profile
+        subgraph CRM Module Context
+            CRM
+            MPS[MergeProfileService] -->|Lock: lock:merge:phone| DB_CRM[(DB: Leads / Customers)]
+        end
+        
         CRM -->|Emit: lead.assigned / lead.score_hot| EventBroker
         BK  -->|Emit: appointment.confirmed / cancelled| EventBroker
         IAM -->|Emit: permission.changed / auth.login_new_device| EventBroker
         
-        %% Notification Module consumes all events
+        %% Notification Module
         EventBroker -->|Subscribe: ALL notification events| NF[Notification Module]
         NF -->|WebSocket: In-App| Admin
         NF -->|BullMQ Jobs| NF_Q[(Redis Queue Port 6380 - Notification Queues)]
         
         IB -->|WebSockets| Admin
         
+        %% Chatbot Queues & Worker
+        CB -->|Dispatch Sequence/Debounce| CB_Q[(Redis Queue Port 6380 - Chatbot Queues)]
+        CB_Q -->|Process Jobs| CB_Worker[Chatbot & Broadcasting Worker]
+        CB_Worker -->|Send Broadcast / Message| GW
+        
         %% Database Isolations
-        CB ----> DB_Chat[(DB: Conversations / Messages)]
-        IB ----> DB_Inbox[(DB: Quick Replies / Internal Comments)]
-        CRM ----> DB_CRM[(DB: Leads / Customers)]
+        CB ----> DB_Chat[(DB: chat_conversations / chat_messages)]
+        IB ----> DB_Inbox[(DB: Quick Replies / Comments)]
         IAM ----> DB_IAM[(DB: Users / Roles / Audit Logs)]
         BK ----> DB_Booking[(DB: Event Types / Availabilities / Appointments)]
-        NF ----> DB_Notif[(DB: Notif Logs / Templates / Preferences)]
+        NF ----> DB_Notif[(DB: Notif Logs / Templates)]
     end
 
     %% External & Services
-    CB ----> DB_Vector[(DB: PgVector / RAG Knowledge)]
     BK -->|Query Busy Slots| GCal[Google Calendar API]
     NF_Q -->|Email delivery| SES[AWS SES / SMTP]
     NF_Q -->|ZNS delivery| ZALO_API[Zalo ZNS API]

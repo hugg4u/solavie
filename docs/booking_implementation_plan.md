@@ -83,11 +83,38 @@ Kế hoạch triển khai được phân rã thành 6 Phase tuần tự để đ
 - [ ] **Task 4.3: Job Cleanup Logic**:
   - Hiện thực hóa hàm tự động tìm kiếm và xóa bỏ các jobs nhắc hẹn cũ trên Redis khi lịch hẹn bị `CANCELLED` hoặc `RESCHEDULED`.
 
-### Phase 5: AI Chatbot Integration Tools
-- [ ] **Task 5.1: Slots Lookup Tool for AI**:
-  - Xây dựng công cụ `get_booking_slots` tích hợp vào ReAct Agent của AI Chatbot để AI tự động tra cứu giờ trống và phản hồi khách hàng.
-- [ ] **Task 5.2: Booking Creation Tool for AI**:
-  - Xây dựng công cụ `create_appointment` cho phép AI Chatbot tự tạo lịch hẹn sau khi khách hàng đã chọn xong khung giờ phù hợp ngay trong hội thoại chat.
+### Phase 5: AI Chatbot Integration Tools & Internal API Protocol
+- [ ] **Task 5.1: Slots Lookup Tool for AI (`get_booking_slots`)**:
+  - Phát triển công cụ tích hợp cho phép AI Agent gọi nội bộ để tra cứu slots trống.
+  - **Giao thức tham số đầu vào (JSON Schema):**
+    ```json
+    {
+      "event_type_id": "string (UUID) - Bắt buộc",
+      "date": "string (YYYY-MM-DD) - Bắt buộc",
+      "host_id": "string (UUID) - Tùy chọn (Nếu muốn chỉ định Sales Rep cụ thể, ví dụ Sales đang phụ trách cuộc chat)"
+    }
+    ```
+  - **Logic xử lý:** Nếu không truyền `host_id`, `AvailableSlotsService` sẽ tự động hợp nhất các khoảng giờ rảnh của tất cả nhân viên Sales hoạt động trong nhóm để trả về danh sách slots khả dụng chung nhằm tối đa hóa cơ hội đặt lịch.
+  - **Đầu ra (JSON Output):** Danh sách mảng các mốc thời gian rảnh dạng ISO 8601 kèm theo `host_id` khả dụng tương ứng.
+- [ ] **Task 5.2: Booking Creation Tool for AI (`create_appointment`)**:
+  - Phát triển công cụ cho phép AI Agent tự động đặt lịch sau khi xác nhận được khung giờ khách hàng mong muốn.
+  - **Giao thức tham số đầu vào (JSON Schema):**
+    ```json
+    {
+      "event_type_id": "string (UUID) - Bắt buộc",
+      "start_time": "string (ISO 8601 Timestamp) - Bắt buộc",
+      "customer_phone": "string - Bắt buộc (Số điện thoại khách hàng)",
+      "customer_name": "string - Bắt buộc",
+      "customer_email": "string - Tùy chọn",
+      "host_id": "string (UUID) - Tùy chọn (Nếu để trống, hệ thống tự động chạy Round-Robin host khả dụng cho slot đó)"
+    }
+    ```
+  - **Logic xử lý:** 
+    - Gọi API nội bộ của Module CRM để kiểm tra/tạo mới hồ sơ khách hàng.
+    - Tạo bản ghi trong bảng `booking_appointments`.
+    - Sinh link họp trực tuyến (Google Meet) tự động.
+    - Kích hoạt sự kiện `appointment.confirmed` để gửi ZNS/Email thông báo.
+  - **Đầu ra (JSON Output):** Payload cuộc hẹn đã tạo thành công gồm `id`, `meeting_link`, tên Sales Rep nhận lịch và thời gian.
 
 ### Phase 6: Testing & Verification
 - [ ] **Task 6.1: Unit & Integration Tests**:
