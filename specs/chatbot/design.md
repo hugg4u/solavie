@@ -175,14 +175,14 @@ Trước khi gửi body request lên LiteLLM Gateway, Core Backend sẽ đưa pa
   *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc (`provider_id`, `model_name`, `usecase_key`, `conversation_id`), sắp xếp (`created_at`, `latency_ms`, `total_cost`), và tìm kiếm (`model_name`, `usecase_key`).
   *   **Format đầu ra:** `PaginatedResponseDto<LlmMetricEntity>`.
 - **`POST /api/v1/chat/conversations/:id/handback`**: Bàn giao lại cuộc trò chuyện từ chế độ `MANUAL` về `AUTOMATIC` để kích hoạt lại AI Chatbot phản hồi tự động.
-  *   **Guard/Permission:** `JwtAuthGuard`, `PermissionsGuard`, `@RequirePermissions('chat:write')`.
+  *   **Guard/Permission:** `JwtAuthGuard`, `PermissionsGuard`, `@RequirePermissions('inbox.conversation.write')`.
   *   **Kiểm tra ABAC:** Sử dụng `ConversationHydrator` nạp dữ liệu cuộc trò chuyện và đối sánh điều kiện: Chỉ cho phép người được gán (`assignee_id` trùng `user.id`) hoặc người dùng có vai trò Admin/Manager thực hiện bàn giao lại cho AI.
 
 ---
 
 ### 4.3. Đặc Tả Permission Constants & ABAC Resource Hydrators
 Để đảm bảo thống nhất phân quyền và hỗ trợ kiểm tra động:
-1.  **Permission Constants:** Module Chatbot định nghĩa file `chatbot.permissions.ts` chứa các quyền quản trị như `gateway:read`, `gateway:write`, `chatbot:read`, `chatbot:write` và tự động đăng ký với Core Permission Registry khi ứng dụng khởi chạy.
+1.  **Permission Constants:** Module Chatbot định nghĩa file `chatbot.permissions.ts` chứa các quyền quản trị như `chatbot.flow.read`, `chatbot.flow.write`, `chatbot.keyword.read`, `chatbot.keyword.write`, `chatbot.sequence.read`, `chatbot.sequence.write`, `chatbot.broadcast.read`, `chatbot.broadcast.write` và tự động đăng ký với Core Permission Registry khi ứng dụng khởi chạy.
 2.  **`ConversationHydrator` (Prefix nhận diện: `inbox.conversation` và `chatbot.conversation`):**
     *   *Phương thức nạp:* `fetchResource(conversationId: string)` nạp từ bảng `chat_conversations`.
     *   *SQL Select:* Chỉ lấy các trường tối thiểu `id`, `state`, `assignee_id`, `channel`.
@@ -579,11 +579,368 @@ Provide your output strictly as a JSON object with the following format:
     }
     ```
 
+---
 
+## 15. Đặc Tả Thực Thể TypeORM (Entities) & API DTOs Cho Phân Hệ Tự Động Hóa
 
+Dưới đây là cấu trúc thiết kế chi tiết cho các Class Entity TypeORM và lớp DTO Request phục vụ phát triển backend:
 
+### 15.1. Khai Báo Các Thực Thể Database (TypeORM Entities)
 
+#### 1. Thực thể `FlowEntity` và `NodeEntity`
+```typescript
+@Entity('chat_flows')
+export class FlowEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
+  @Column()
+  name: string;
 
+  @Column({ nullable: true })
+  description: string;
 
+  @Column({ default: true })
+  isActive: boolean;
 
+  @Column({ name: 'created_by', nullable: true })
+  createdBy: string; // Soft link iam_users.id
+
+  @OneToMany(() => NodeEntity, (node) => node.flow, { cascade: true })
+  nodes: NodeEntity[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+
+@Entity('chat_nodes')
+export class NodeEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'flow_id' })
+  flowId: string;
+
+  @ManyToOne(() => FlowEntity, (flow) => flow.nodes, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'flow_id' })
+  flow: FlowEntity;
+
+  @Column({ type: 'varchar', length: 50 })
+  type: 'MESSAGE' | 'CAROUSEL' | 'ACTION' | 'CONDITION';
+
+  @Column({ type: 'jsonb' })
+  content: Record<string, any>; // Lưu text, buttons, tags, condition expressions
+
+  @Column({ name: 'next_node_id', nullable: true })
+  nextNodeId: string; // Soft link tự trỏ
+}
+```
+
+#### 2. Thực thể `KeywordEntity`
+```typescript
+@Entity('chat_keywords')
+export class KeywordEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ unique: true })
+  keyword: string;
+
+  @Column({ type: 'varchar', length: 50 })
+  matchType: 'EXACT' | 'CONTAINS' | 'STARTS_WITH';
+
+  @Column({ name: 'flow_id' })
+  flowId: string; // Soft link chat_flows.id
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+#### 3. Thực thể `SequenceEntity`, `SequenceStepEntity`, `SequenceSubscriberEntity`
+```typescript
+@Entity('chat_sequences')
+export class SequenceEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  name: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @OneToMany(() => SequenceStepEntity, (step) => step.sequence, { cascade: true })
+  steps: SequenceStepEntity[];
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+
+@Entity('chat_sequence_steps')
+export class SequenceStepEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'sequence_id' })
+  sequenceId: string;
+
+  @ManyToOne(() => SequenceEntity, (seq) => seq.steps, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'sequence_id' })
+  sequence: SequenceEntity;
+
+  @Column({ name: 'delay_seconds' })
+  delaySeconds: number;
+
+  @Column({ name: 'flow_id' })
+  flowId: string; // Soft link chat_flows.id
+
+  @Column({ name: 'sort_order' })
+  sortOrder: number;
+}
+
+@Entity('chat_sequence_subscribers')
+@Unique(['sequenceId', 'customerId'])
+export class SequenceSubscriberEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'sequence_id' })
+  sequenceId: string; // Soft link chat_sequences.id
+
+  @Column({ name: 'customer_id' })
+  customerId: string; // Soft link crm_customers.id
+
+  @Column({ name: 'current_step_id', nullable: true })
+  currentStepId: string; // Soft link chat_sequence_steps.id
+
+  @Column({ default: 'ACTIVE' })
+  status: 'ACTIVE' | 'COMPLETED' | 'UNSUBSCRIBED';
+
+  @Column({ name: 'next_execution_at', type: 'timestamp', nullable: true })
+  nextExecutionAt: Date;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+#### 4. Thực thể `BroadcastCampaignEntity` và `BroadcastLogEntity`
+```typescript
+@Entity('chat_broadcast_campaigns')
+export class BroadcastCampaignEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  name: string;
+
+  @Column()
+  channel: 'FACEBOOK' | 'ZALO';
+
+  @Column({ name: 'flow_id' })
+  flowId: string; // Soft link chat_flows.id
+
+  @Column({ type: 'jsonb', name: 'target_filters', default: '{}' })
+  targetFilters: Record<string, any>;
+
+  @Column({ name: 'scheduled_at', type: 'timestamp', nullable: true })
+  scheduledAt: Date;
+
+  @Column({ default: 'PENDING' })
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'PAUSED' | 'FAILED';
+
+  @Column({ name: 'total_targets', default: 0 })
+  totalTargets: number;
+
+  @Column({ name: 'sent_count', default: 0 })
+  sentCount: number;
+
+  @Column({ name: 'failed_count', default: 0 })
+  failedCount: number;
+
+  @Column({ name: 'uploader_id', nullable: true })
+  uploaderId: string; // Soft link iam_users.id
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+
+@Entity('chat_broadcast_logs')
+export class BroadcastLogEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ name: 'campaign_id' })
+  campaignId: string; // Soft link chat_broadcast_campaigns.id
+
+  @Column({ name: 'customer_id' })
+  customerId: string; // Soft link crm_customers.id
+
+  @Column({ type: 'varchar', length: 50 })
+  status: 'SENT' | 'FAILED' | 'SKIPPED';
+
+  @Column({ name: 'error_message', type: 'text', nullable: true })
+  errorMessage: string;
+
+  @Column({ name: 'sent_at', type: 'timestamp', nullable: true })
+  sentAt: Date;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+```
+
+#### 5. Thực thể `GrowthToolEntity`
+```typescript
+@Entity('chat_growth_tools')
+export class GrowthToolEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  name: string;
+
+  @Column({ type: 'varchar', length: 50 })
+  type: 'QR_CODE' | 'REF_LINK';
+
+  @Column({ name: 'flow_id' })
+  flowId: string; // Soft link chat_flows.id
+
+  @Column({ name: 'ref_parameter', unique: true })
+  refParameter: string;
+
+  @Column({ type: 'jsonb', default: '{}' })
+  payload: Record<string, any>;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+}
+```
+
+### 15.2. Lớp DTO Request Cho API Admin Cấu Hình
+
+#### 1. DTO tạo mới Flow (`CreateFlowDto` và các node lồng)
+```typescript
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, ValidateNested, IsEnum } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CreateNodeDto {
+  @IsString()
+  @IsNotEmpty()
+  id: string;
+
+  @IsEnum(['MESSAGE', 'CAROUSEL', 'ACTION', 'CONDITION'])
+  type: 'MESSAGE' | 'CAROUSEL' | 'ACTION' | 'CONDITION';
+
+  @IsNotEmpty()
+  content: Record<string, any>;
+
+  @IsString()
+  @IsOptional()
+  nextNodeId?: string;
+}
+
+export class CreateFlowDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean = true;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateNodeDto)
+  nodes: CreateNodeDto[];
+}
+```
+
+#### 2. DTO đăng ký Từ khóa (`CreateKeywordDto`)
+```typescript
+export class CreateKeywordDto {
+  @IsString()
+  @IsNotEmpty()
+  keyword: string;
+
+  @IsEnum(['EXACT', 'CONTAINS', 'STARTS_WITH'])
+  matchType: 'EXACT' | 'CONTAINS' | 'STARTS_WITH';
+
+  @IsUUID()
+  @IsNotEmpty()
+  flowId: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean = true;
+}
+```
+
+#### 3. DTO tạo chiến dịch Broadcasting (`CreateBroadcastCampaignDto`)
+```typescript
+export class CreateBroadcastCampaignDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsEnum(['FACEBOOK', 'ZALO'])
+  channel: 'FACEBOOK' | 'ZALO';
+
+  @IsUUID()
+  @IsNotEmpty()
+  flowId: string;
+
+  @IsNotEmpty()
+  targetFilters: Record<string, any>;
+
+  @IsOptional()
+  @IsDateString()
+  scheduledAt?: string;
+}
+```
+
+#### 4. DTO tạo mới Growth Tool (`CreateGrowthToolDto`)
+```typescript
+export class CreateGrowthToolDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsEnum(['QR_CODE', 'REF_LINK'])
+  type: 'QR_CODE' | 'REF_LINK';
+
+  @IsUUID()
+  @IsNotEmpty()
+  flowId: string;
+
+  @IsString()
+  @IsNotEmpty()
+  refParameter: string;
+
+  @IsOptional()
+  payload?: Record<string, any>;
+}
+```

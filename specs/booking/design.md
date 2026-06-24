@@ -109,7 +109,10 @@ Các bảng thuộc module Đặt Lịch Hẹn sử dụng tiền tố `booking_
 
       @IsString()
       @IsNotEmpty()
-      customerPhone: string;
+      @Matches(/^(0|84)(3|5|7|8|9)[0-9]{8}$/, {
+        message: 'INVALID_PHONE_NUMBER: Số điện thoại không đúng định dạng Việt Nam (phải gồm 10 chữ số và bắt đầu bằng các đầu số di động 03, 05, 07, 08, 09).'
+      })
+      customerPhone: string; // Tự động loại bỏ khoảng trắng/dấu gạch ngang trước khi chạy validation
 
       @IsOptional()
       @IsString()
@@ -119,8 +122,10 @@ Các bảng thuộc module Đặt Lịch Hẹn sử dụng tiền tố `booking_
 
 ### 2.3. Hủy hoặc Đổi lịch (Cancel / Reschedule)
 *   **Hủy cuộc hẹn:** `PUT /api/v1/booking/appointments/:id/cancel`
+    *   Guard/Permission: `JwtAuthGuard`, `RequirePermissions('booking.appointment.write')`
     *   Body: `{ reason: string }`
 *   **Đổi lịch hẹn:** `PUT /api/v1/booking/appointments/:id/reschedule`
+    *   Guard/Permission: `JwtAuthGuard`, `RequirePermissions('booking.appointment.write')`
     *   Body: `{ newStartTime: string, reason?: string }`
 
 ### 2.4. Cấu hình Lịch rảnh của Sales (Cổng Portal)
@@ -151,7 +156,7 @@ Các bảng thuộc module Đặt Lịch Hẹn sử dụng tiền tố `booking_
 
 ### 2.5. Lấy danh sách Lịch hẹn (Appointments List - Portal)
 *   **Method & Route:** `GET /api/v1/booking/appointments`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('booking.appointments.read')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('booking.appointment.read')`
 *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` để xử lý phân trang, lọc và tìm kiếm.
 *   *Search fields:* `appointment.customerName`, `appointment.customerEmail`, `appointment.customerPhone`.
 *   *Filter fields:* `status` (trạng thái lịch), `event_type_id` (loại sự kiện), `host_id` (Sales host).

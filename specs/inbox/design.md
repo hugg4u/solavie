@@ -32,7 +32,7 @@
 
 ### 3.1. API Lấy danh sách cuộc hội thoại cho Feed
 *   **Method & Route:** `GET /api/v1/inbox/conversations`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:read')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.read')`
 *   **Request Query Param (`GetConversationsQueryDto`):**
     ```typescript
     export class GetConversationsQueryDto {
@@ -74,7 +74,7 @@
 
 ### 3.2. API Lấy lịch sử tin nhắn & ghi chú nội bộ (Timeline)
 *   **Method & Route:** `GET /api/v1/inbox/conversations/:id/timeline`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:read')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.read')`
 *   **Response DTO (`TimelineItemDto`):**
     Trả về danh sách gộp cả tin nhắn chat và ghi chú nội bộ, sắp xếp theo `created_at` tăng dần.
     ```typescript
@@ -90,24 +90,28 @@
 
 ### 3.3. API Sales gửi tin nhắn cho khách
 *   **Method & Route:** `POST /api/v1/inbox/conversations/:id/messages`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:write')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.write')`
 *   **Request Body (`CreateAgentMessageDto`):**
     ```typescript
     export class CreateAgentMessageDto {
       @IsString()
       @IsNotEmpty()
       content: string;
+
+      @IsOptional()
+      @IsEnum(['CONFIRMED_EVENT_UPDATE', 'HUMAN_AGENT'])
+      tag?: 'CONFIRMED_EVENT_UPDATE' | 'HUMAN_AGENT'; // Đính kèm tag để gửi ngoài 24h
     }
     ```
 
 ### 3.4. API Sales tiếp quản cuộc hội thoại (Claim Chat)
 *   **Method & Route:** `POST /api/v1/inbox/conversations/:id/claim`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:write')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.write')`
 *   **Response:** `{ success: true, assignee_id: string }`
 
 ### 3.5. API Tạo ghi chú nội bộ
 *   **Method & Route:** `POST /api/v1/inbox/conversations/:id/comments`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:write')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.write')`
 *   **Request Body (`CreateInternalCommentDto`):**
     ```typescript
     export class CreateInternalCommentDto {
@@ -119,7 +123,7 @@
 
 ### 3.6. API Lấy danh sách câu trả lời nhanh
 *   **Method & Route:** `GET /api/v1/inbox/quick-replies`
-*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('chat:read')`
+*   **Guard/Permission:** `JwtAuthGuard`, `RequirePermissions('inbox.conversation.read')`
 
 ---
 

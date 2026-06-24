@@ -4,11 +4,12 @@
 - `[ ]` **CRM Permissions & Sync Config:**
   - Tạo tệp `crm.permissions.ts` chứa các hằng số quyền của CRM.
   - Đăng ký hằng số này vào `permission-registry.ts` ở Core để kích hoạt Auto-Sync khi chạy hệ thống.
-  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full crm.*, `SALES` chỉ crm.customers.read/update, crm.notes.*).
+  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full crm.*, `SALES` chỉ crm.customer.read/write, crm.note.*).
 - `[ ]` **CRUD Configuration:** Viết các APIs cho Admin cấu hình Fields, Stages, Rules.
 - `[ ]` **Dynamic Pipeline Logic:** Implement Service Layer kiểm tra Entrance Criteria khi đổi Stage.
-- [ ] **Merge Logic:** Implement Service gom nhóm hồ sơ trùng số điện thoại và cập nhật trỏ lại `customer_id` cho các cuộc hội thoại liên quan.
-- `[ ]` **Merge Lead Distributed Lock:** Tích hợp khóa phân tán Redis Lock (ioredis, sử dụng Redis client namespace `cache`) vào luồng Merge Logic để triệt tiêu race condition khi gộp trùng.
+- `[ ]` **Merge Logic:** Triển khai `MergeProfileService` thực hiện tự động gộp hồ sơ trùng số điện thoại, hợp nhất thông tin cá nhân, custom fields, timeline conversations/activities, và soft-delete profile phụ. Lưu vết dữ liệu bị ghi đè vào một ghi chú viết tay.
+- `[ ]` **Manual Merge API Endpoint:** Triển khai route `POST /api/v1/crm/customers/merge` kèm theo validation DTO `MergeCustomersRequestDto`, phân quyền `crm.customer.write` và áp dụng ABAC check quyền sở hữu qua `CustomerHydrator`.
+- `[ ]` **Merge Lead Distributed Lock:** Tích hợp khóa phân tán Redis Lock `lock:merge:phone:${phone}` (TTL 10s) sử dụng Redis client vào luồng gộp hồ sơ để bảo vệ toàn vẹn dữ liệu.
 - `[ ]` **ROI Calculator Service:** Cài đặt công thức tính toán Solar dựa trên cấu hình Vùng miền.
 - `[ ]` **Scoring Engine:** Viết logic eval (đánh giá) điểm dựa trên `crm_scoring_rules`.
 - `[ ]` **Activity Observer:** Viết Subscribers lắng nghe Event để tự động ghi log vào `crm_activities`.

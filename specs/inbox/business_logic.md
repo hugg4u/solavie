@@ -79,15 +79,40 @@ export class AgentInboxService {
     private readonly inboxGateway: InboxGateway
   ) {}
 
-  async sendAgentMessage(conversationId: string, content: string, agentId: string): Promise<ChatMessage> {
+  async sendAgentMessage(
+    conversationId: string, 
+    content: string, 
+    agentId: string, 
+    tag?: 'CONFIRMED_EVENT_UPDATE' | 'HUMAN_AGENT'
+  ): Promise<ChatMessage> {
     const conversation = await this.conversationRepo.findOneBy({ id: conversationId });
     if (!conversation) {
       throw new NotFoundException('Không tìm thấy cuộc trò chuyện');
     }
 
-    // 1. Kiểm soát trạng thái cuộc trò chuyện
+    // 1. Kiểm tra chính sách cửa sổ 24 giờ của Facebook/Zalo
+    const now = Date.now();
+    const lastCustomerMessageTime = conversation.last_customer_message_at 
+      ? new Date(conversation.last_customer_message_at).getTime()
+      : 0;
+    const isWithin24Hours = (now - lastCustomerMessageTime) <= 24 * 60 * 60 * 1000;
+
+    if (!isWithin24Hours) {
+      if (conversation.channel === 'FACEBOOK') {
+        if (!tag) {
+          throw new BadRequestException(
+            'OUTSIDE_24H_WINDOW: Hết thời gian phản hồi tự do 24h. Bạn bắt buộc phải chọn gửi mẫu tin nhắn đính tag (Template).'
+          );
+        }
+      } else if (conversation.channel === 'ZALO') {
+        throw new BadRequestException(
+          'OUTSIDE_24H_WINDOW: Zalo OA cấm gửi tin nhắn văn bản tự do ngoài 24h. Bạn bắt buộc phải chuyển sang gửi Zalo ZNS.'
+        );
+      }
+    }
+
+    // 2. Kiểm soát trạng thái cuộc trò chuyện (Tắt AI nếu đang tự động)
     if (conversation.state === 'AUTOMATIC') {
-      // Nếu AI đang tự động trả lời, Sales can thiệp gửi tin -> Tắt AI lập tức
       conversation.state = 'MANUAL';
       conversation.assignee_id = agentId;
       await this.conversationRepo.save(conversation);
@@ -100,7 +125,7 @@ export class AgentInboxService {
       });
     }
 
-    // 2. Lưu tin nhắn vào DB loại HUMAN_AGENT
+    // 3. Lưu tin nhắn vào DB loại HUMAN_AGENT
     const message = this.messageRepo.create({
       conversation_id: conversationId,
       sender_type: 'HUMAN_AGENT',
@@ -109,14 +134,15 @@ export class AgentInboxService {
     });
     const savedMessage = await this.messageRepo.save(message);
 
-    // 3. Gọi Gateway Module để đẩy tin nhắn sang Zalo OA hoặc Facebook Page thực tế
+    // 4. Gọi Gateway Module để đẩy tin nhắn sang Zalo OA hoặc Facebook Page thực tế kèm tag
     await this.gatewayApiService.sendMessage({
       channel: conversation.channel,
       recipientId: conversation.sender_id, // Zalo ID hoặc Facebook PSID
-      text: content
+      text: content,
+      tag: tag // Gửi tag sang Gateway
     });
 
-    // 4. Giải phóng Typing Lock trên Redis và phát WebSocket kết thúc typing
+    // 5. Giải phóng Typing Lock trên Redis và phát WebSocket kết thúc typing
     await this.redis.del(`lock:typing:conversation:${conversationId}`);
     this.inboxGateway.server.to(`conversation:${conversationId}`).emit('server:typing_status', {
       conversationId,

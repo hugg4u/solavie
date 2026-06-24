@@ -56,10 +56,10 @@ Thay vì xử lý các tác vụ nặng nề trên Application Layer (Node.js/Ne
 Để bảo vệ các tệp tin lưu trữ và tránh người dùng truy cập trái phép hoặc xóa nhầm tệp của người khác, module Storage tích hợp cơ chế bảo mật sau:
 
 ### 5.1. Phân quyền API
-- `POST /api/v1/storage/presigned-post`: Yêu cầu quyền `storage.files.upload`.
-- `POST /api/v1/storage/confirm`: Yêu cầu quyền `storage.files.upload`.
-- `GET /api/v1/storage/presigned-download/:id`: Yêu cầu quyền `storage.files.read`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
-- `DELETE /api/v1/storage/files/:id`: Yêu cầu quyền `storage.files.delete`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
+- `POST /api/v1/storage/presigned-post`: Yêu cầu quyền `storage.file.upload`.
+- `POST /api/v1/storage/confirm`: Yêu cầu quyền `storage.file.upload`.
+- `GET /api/v1/storage/presigned-download/:id`: Yêu cầu quyền `storage.file.read`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
+- `DELETE /api/v1/storage/files/:id`: Yêu cầu quyền `storage.file.delete`. Áp dụng kiểm tra ABAC: `user.id == resource.uploaderId` (Bypass đối với Admin/Manager).
 
 ### 5.2. `FileHydrator` (Prefix nhận diện: `storage.file`)
 Module Storage triển khai và đăng ký dịch vụ sau với `ResourceHydratorRegistry` ở Core:

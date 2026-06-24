@@ -3,7 +3,7 @@
 Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5 Phase triển khai tuần tự theo thực tiễn tốt nhất (Best Practice):
 
 ## Phase 1: Setup Infrastructure & Base LLM Engine
-- [ ] **Define Permission Constants:** Định nghĩa file `chatbot.permissions.ts` chứa các hằng số quyền (`gateway:read`, `gateway:write`, `chatbot:read`, `chatbot:write`) và đăng ký tự động vào global registry lúc khởi chạy.
+- [ ] **Define Permission Constants:** Định nghĩa file `chatbot.permissions.ts` chứa các hằng số quyền (`chatbot.flow.read`, `chatbot.flow.write`, `chatbot.keyword.read`, `chatbot.keyword.write`, `chatbot.sequence.read`, `chatbot.sequence.write`, `chatbot.broadcast.read`, `chatbot.broadcast.write`) và đăng ký tự động vào global registry lúc khởi chạy.
 - [ ] **Database Setup:** Thiết lập các bảng `gw_llm_providers`, `gw_llm_provider_models`, `gw_llm_usecases`, `gw_llm_metrics`, bảng `chatbot_outbox_events` (cho Transactional Outbox) và các cột theo dõi nhắc nhở (`last_message_at`, `last_customer_message_at`, `followup_status`) trong bảng `chat_conversations`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [x] **LLM Gateway (LiteLLM):** Cấu hình container LiteLLM (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
 - [ ] **LLM Base Adapter:** Khai báo Interface `BaseLLMAdapter` trong NestJS.
@@ -45,7 +45,7 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
 - [ ] **Handover Event Emission (Outbox):** Trong `ChatbotHandoverService.triggerHandover()`, sau khi cập nhật `state = MANUAL` và gửi tin nhắn cầu lịch sự cho khách, ghi bản ghi sự kiện `chat.handover_requested` vào bảng `chatbot_outbox_events` (trong cùng 1 Database Transaction) kèm payload đầy đủ: `conversationId`, `customerId`, `customerName`, `customerChannel`, `assigneeId`, `assigneeName`, `urgencyLevel`. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Handover Message Logic:** Triển khai `ChatbotHandoverService` tự động gửi tin nhắn phản hồi lịch sự ngay lập tức khi chuyển chế độ sang `MANUAL`. (Tin nhắn này gửi ra ngoài cho khách qua Facebook/Zalo API — khác với notification nội bộ cho Sales.)
 - [ ] **Implement ConversationHydrator:** Xây dựng `ConversationHydrator` triển khai interface `ResourceHydrator` từ Core Database, chỉ select các trường tối thiểu (`id`, `state`, `assignee_id`, `channel`) và đăng ký với `ResourceHydratorRegistry` dưới các tiền tố `inbox.conversation` và `chatbot.conversation`.
-- [ ] **Handback API with ABAC:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm `JwtAuthGuard` và `PermissionsGuard` (yêu cầu quyền `chat:write`). Sử dụng `ConversationHydrator` để kiểm tra ABAC (chỉ cho phép assignee của cuộc hội thoại hoặc Admin/Manager thực hiện). Bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate). [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
+- [ ] **Handback API with ABAC:** Triển khai API controller `POST /api/v1/chat/conversations/:id/handback` kèm `JwtAuthGuard` và `PermissionsGuard` (yêu cầu quyền `inbox.conversation.write`). Sử dụng `ConversationHydrator` để kiểm tra ABAC (chỉ cho phép assignee của cuộc hội thoại hoặc Admin/Manager thực hiện). Bắt buộc header `Idempotency-Key` (dùng Redis `SET NX` TTL 60s để chống duplicate). [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **Chatbot Outbox Sweeper:** Triển khai BullMQ Processor và Cronjob Sweeper để định kỳ quét `chatbot_outbox_events` và publish events ra ngoài Event Bus. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 
 ## Phase 5: Centralized Logging, Sync Job & Monitoring
@@ -71,3 +71,20 @@ Kế hoạch phát triển module Chatbot & AI Core được phân chia thành 5
   - Sự kiện `chat.handover_requested` được lưu vào `chatbot_outbox_events`.
 - [ ] **Idempotency Integration Tests:** Kiểm tra các API POST admin và handback xử lý đúng khi trùng `Idempotency-Key`. [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **No Duplicate Notification Test:** Kiểm tra Chatbot Module không tự gửi WebSocket trực tiếp cho Sales (chức năng đó thuộc Notification Module).
+
+## Phase 8: Automation & Omnichannel Campaign Engine Implementation (Phase 1)
+- [ ] **Database Migration:** Tạo tệp migration cho 9 bảng mới với tiền tố `chat_` (`chat_flows`, `chat_nodes`, `chat_keywords`, `chat_sequences`, `chat_sequence_steps`, `chat_sequence_subscribers`, `chat_growth_tools`, `chat_broadcast_campaigns`, `chat_broadcast_logs`).
+- [ ] **Entities Definition:** Định nghĩa các Entities TypeORM cho 9 bảng tự động hóa trong module Chatbot, bao gồm thiết lập các mối quan hệ `OneToMany`, `ManyToOne` và các khóa ngoại mềm theo đúng thiết kế CSDL.
+- [ ] **Graph Validator Service:** Hiện thực hóa `GraphValidator` sử dụng thuật toán DFS để phát hiện chu trình (vòng lặp vô hạn) và BFS để phát hiện các node mồ côi (không thể đi tới từ root node) của kịch bản Flow.
+- [ ] **Flow Executor Service:** Triển khai `FlowExecutorService` để duyệt và thực thi các node kịch bản (gửi tin nhắn MESSAGE kèm buttons/carousels, thực hiện các ACTIONS gán tag CRM/assign sales/webhook, rẽ nhánh điều kiện CONDITION dựa trên các thuộc tính của Lead).
+- [ ] **Flows & Nodes CRUD Controller:** Xây dựng các RESTful endpoints cho phép Admin quản trị kịch bản luồng tin nhắn tự do (Form-based UI backend). Tích hợp kiểm duyệt đồ thị bằng `GraphValidator` trước khi lưu.
+- [ ] **Keyword Router Service:** Triển khai `KeywordRouterService` thực hiện quét các tin nhắn đầu vào của khách để so khớp với danh sách từ khóa tĩnh (hỗ trợ `EXACT`, `CONTAINS`, `STARTS_WITH`). Khi khớp, chuyển trạng thái hội thoại sang `FLOW_EXECUTING` và kích hoạt Flow được chỉ định.
+- [ ] **Keywords CRUD Controller:** Xây dựng các RESTful endpoints để Admin quản trị danh sách từ khóa kích hoạt luồng.
+- [ ] **Sequence Scheduler Service:** Triển khai hàng đợi delay BullMQ `solavie:chatbot-sequence` và `SequenceSchedulerService` để đăng ký khách hàng vào chuỗi chăm sóc (Sequences), thực thi các bước gửi tin nhắn theo dòng thời gian trì hoãn (Delay Timeline).
+- [ ] **Auto Unsubscribe Sequence Logic:** Viết logic tự động dừng gửi chuỗi (Unsubscribe) của khách hàng ngay khi nhận được tương tác chat tay của khách hoặc khi chuyên viên Sales Rep bấm tiếp quản hội thoại (`state = MANUAL`).
+- [ ] **Growth Tools Webhook Handler:** Xây dựng logic phân tích các tham số tiếp thị `ref_parameter` tại webhook đầu vào của Gateway để tự động kích hoạt Flow kịch bản tương ứng khi khách click Ref link hoặc quét mã QR.
+- [ ] **Broadcasting Engine Service:** Triển khai dịch vụ lên chiến dịch gửi tin hàng loạt (lọc động tệp khách hàng mục tiêu từ CRM), chèn các job gửi tin bất đồng bộ vào hàng đợi BullMQ (`solavie:facebook-broadcast` và `solavie:zalo-broadcast`).
+- [ ] **Broadcast Workers with Rate Limiting:** Triển khai `BroadcastWorker` xử lý ngầm, áp dụng giãn cách rate limit (Facebook 1 giây, Zalo 0.5 giây giữa các tin nhắn) và chia danh sách thành các lô 50 khách hàng.
+- [ ] **Quiet Hours Guard Logic:** Tích hợp bộ lọc múi giờ yên lặng tại VN vào `BroadcastWorker`. Nếu tin nhắn rơi vào khung giờ 22:00 - 07:00, tự động dời lịch và lên lịch gửi lại vào 08:00 sáng hôm sau.
+- [ ] **Circuit Breaker for Broadcast:** Tích hợp bộ đếm lỗi trên Redis. Nếu số tin nhắn gửi lỗi liên tiếp đạt ngưỡng 20 tin, tự động tạm dừng chiến dịch (chuyển sang `FAILED` hoặc `PAUSED`) và phát sự kiện outbox cảnh báo khẩn cấp cho IT Admin.
+- [ ] **Campaign Analytics & Summary API:** Triển khai API lấy báo cáo thống kê thời gian thực của chiến dịch (tổng mục tiêu, số tin đã gửi, số tin thành công, số tin thất bại, lý do lỗi chi tiết, tỷ lệ click các buttons trong tin nhắn).

@@ -127,6 +127,18 @@ export class AppointmentService {
   ) {}
 
   async bookAppointment(dto: CreateAppointmentDto, duration: number): Promise<BookingAppointment> {
+    // 0. Chuẩn hóa và validate số điện thoại di động Việt Nam
+    const cleanPhone = dto.customerPhone.replace(/\D/g, '');
+    let normalizedPhone = cleanPhone;
+    if (normalizedPhone.startsWith('84')) {
+      normalizedPhone = '0' + normalizedPhone.substring(2);
+    }
+    const phoneRegex = /^0(3|5|7|8|9)[0-9]{8}$/;
+    if (!phoneRegex.test(normalizedPhone)) {
+      throw new BadRequestException('INVALID_PHONE_NUMBER: Số điện thoại không hợp lệ. Phải là số điện thoại di động Việt Nam gồm 10 chữ số.');
+    }
+    dto.customerPhone = normalizedPhone; // Ghi nhận số điện thoại đã chuẩn hóa
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();

@@ -291,6 +291,52 @@ Ghi log mức `info` khi nhân viên tư vấn gọi API để trả quyền cho
 }
 ```
 
+---
 
+## 10. Log Thực Thi Node Trong Kịch Bản (Flow Node Execution Log)
 
+Ghi log khi Flow Executor chạy qua một node trong Flow kịch bản.
 
+```json
+{
+  "timestamp": "2026-06-15T16:45:00.123Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "FLOW_EXECUTION",
+  "message": "Flow node executed successfully",
+  "traceId": "t_flow_123456_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "flow_id": "flow_uuid_7788",
+    "node_id": "node_uuid_1122",
+    "node_type": "MESSAGE",
+    "action_type": null,
+    "next_node_id": "node_uuid_3344"
+  }
+}
+```
+
+---
+
+## 11. Log Gửi Tin Nhắn Chiến Dịch Hàng Loạt (Broadcast Campaign Execution Log)
+
+Ghi log khi Broadcast Worker thực hiện gửi tin nhắn trong một chiến dịch, bao gồm các metrics về số lỗi liên tiếp của Circuit Breaker.
+
+```json
+{
+  "timestamp": "2026-06-15T16:50:00.789Z",
+  "level": "info",
+  "module": "CHATBOT",
+  "context": "BROADCAST_CAMPAIGN",
+  "message": "Broadcast message sent to customer",
+  "traceId": "t_broadcast_campaign_4455",
+  "metadata": {
+    "campaign_id": "camp_uuid_8899",
+    "customer_id": "cust_uuid_3344",
+    "channel": "FACEBOOK",
+    "status": "SENT",
+    "error_message": null,
+    "circuit_breaker_errors_count": 0
+  }
+}
+```

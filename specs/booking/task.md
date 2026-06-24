@@ -13,7 +13,7 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 - [ ] **Booking Permissions & Sync Config:**
   - Tạo tệp `booking.permissions.ts` chứa các hằng số quyền của Booking.
   - Đăng ký hằng số này vào `permission-registry.ts` ở Core để kích hoạt Auto-Sync khi chạy hệ thống.
-  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full booking.*, `SALES` chỉ booking.appointments.read/update).
+  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full booking.*, `SALES` chỉ booking.appointment.read/write).
 - [ ] **Event Types CRUD:** Xây dựng API và controller cho phép Admin quản lý các loại cuộc hẹn mẫu (`GET`, `POST`, `PUT` /api/v1/booking/event-types).
 - [ ] **Sales Availability CRUD:** Triển khai API cho phép nhân viên Sales tùy chỉnh thời gian làm việc của mình theo tuần (`GET`, `POST` /api/v1/booking/availabilities).
 - [ ] **Available Slots Calculation Service:** Triển khai `AvailableSlotsService` hiện thực hóa thuật toán sinh khung giờ trống (lọc trùng lịch DB, lọc trùng lịch Google Calendar, áp dụng Buffer Time 15p và Min Notice 2 tiếng).
@@ -28,6 +28,7 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 
 ## Phase 3: Booking & CRM Synchronization
 - [ ] **Appointment Booking API:** Triển khai API `POST /api/v1/booking/appointments` cho phép đặt lịch hẹn.
+- [ ] **Phone Number Normalization & Validation:** Triển khai tiền xử lý (loại bỏ ký tự không phải số) và kiểm tra định dạng số điện thoại Việt Nam di động hợp lệ (đầu số 03, 05, 07, 08, 09 với 10 chữ số) trước khi lưu. Ném lỗi `INVALID_PHONE_NUMBER` nếu không hợp lệ.
 - [ ] **Idempotency Guard:** Bổ sung cơ chế check `Idempotency-Key` qua Redis cho API Booking để tránh người dùng click đúp sinh lịch hẹn trùng lặp. [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **Round-Robin Host Allocation:** Tích hợp logic tự động gán Sales Rep xoay vòng dựa trên Redis pointer nếu khách không chỉ định Sales trực tiếp.
 - [ ] **CRM Customer Sync:** Triển khai logic tự động tìm hoặc tạo hồ sơ khách hàng `crm_customers` khi đặt lịch thành công, tự động gán `assignee_id` cho Sales host.
@@ -43,10 +44,11 @@ Kế hoạch lập trình và triển khai module Đặt Lịch Hẹn được p
 - [ ] **Inject Sales Info:** Đảm bảo `AppointmentService` đã lookup và truyền `salesUser.full_name` và `salesUser.email` vào payload event (có thể query qua `IamUserRepository` qua soft link).
 
 ## Phase 5: AI Chatbot Integration
-- [ ] **Slots Lookup Tool for AI:** Viết tool `get_booking_slots` tích hợp vào ReAct Agent của Chatbot.
-- [ ] **Booking Tool for AI:** Viết tool `create_appointment` tích hợp vào ReAct Agent để cho phép AI tự tạo lịch cho khách trực tiếp qua hội thoại chat.
+- [ ] **Slots Lookup Tool for AI (`get_booking_slots`):** Viết tool `get_booking_slots` gọi API `GET /api/v1/booking/slots` tích hợp vào ReAct Agent của Chatbot.
+- [ ] **Booking Tool for AI (`create_appointment`):** Viết tool `create_appointment` gọi API `POST /api/v1/booking/appointments` tích hợp vào ReAct Agent, xử lý tốt exception `INVALID_PHONE_NUMBER` để AI phản hồi khéo léo yêu cầu khách nhập lại SĐT.
 
 ## Phase 6: Automated Testing & Verification
 - [ ] **Slots Calculation Tests:** Viết unit tests kiểm tra thuật toán tính giờ trống dưới các kịch bản trùng lịch bận Google Calendar, trùng lịch hẹn DB và vi phạm Buffer Time.
+- [ ] **Phone Validation Tests:** Viết unit tests kiểm tra các trường hợp định dạng số điện thoại (khoảng trắng, đầu số di động, đầu số 84, hoặc số điện thoại không hợp lệ ném lỗi `INVALID_PHONE_NUMBER`).
 - [ ] **Round-Robin Booking Tests:** Viết unit tests kiểm thử cơ chế xoay vòng phân bổ Sales khi nhiều khách book cùng lúc.
 - [ ] **Event Outbox Tests:** Viết integration test kiểm tra `appointment.confirmed` và `appointment.cancelled` được ghi đúng vào Outbox thay vì emit thẳng. [Tham khảo Outbox Spec](../system_outbox_pattern.md)

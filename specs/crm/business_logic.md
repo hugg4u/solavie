@@ -206,3 +206,140 @@ export class CustomerNotesService {
 }
 ```
 
+---
+
+## 7. Đặc Tả Triển Khai Dịch Vụ Gộp Hồ Sơ Tự Động (MergeProfileService Pseudocode)
+
+Dịch vụ chạy ngầm hợp nhất hai hồ sơ khách hàng bị trùng số điện thoại, bảo vệ bằng khóa phân tán Redis Lock và lưu vết các xung đột trường dữ liệu nhu cầu Solar vào ghi chú viết tay.
+
+```typescript
+@Injectable()
+export class MergeProfileService {
+  private readonly logger = new Logger(MergeProfileService.name);
+
+  constructor(
+    @InjectRedis('cache') private readonly redis: Redis,
+    @InjectRepository(CrmCustomer)
+    private readonly customerRepo: Repository<CrmCustomer>,
+    @InjectRepository(CrmCustomerNote)
+    private readonly noteRepo: Repository<CrmCustomerNote>,
+    @InjectRepository(ChatConversation)
+    private readonly conversationRepo: Repository<ChatConversation>,
+    @InjectRepository(CrmActivity)
+    private readonly activityRepo: Repository<CrmActivity>,
+  ) {}
+
+  /**
+   * Tự động gộp hồ sơ dựa trên số điện thoại
+   */
+  async autoMergeByPhone(phoneNumber: string): Promise<void> {
+    const lockKey = `lock:merge:phone:${phoneNumber}`;
+    const requestId = uuidv4();
+
+    // 1. Acquire Distributed Redis Lock (10 giây)
+    const isLocked = await this.redis.set(lockKey, requestId, 'NX', 'PX', 10000);
+    if (isLocked !== 'OK') {
+      this.logger.warn(`Số điện thoại ${phoneNumber} đang được xử lý gộp bởi tiến trình khác. Bỏ qua.`);
+      return;
+    }
+
+    try {
+      // 2. Tìm các hồ sơ trùng SĐT
+      const profiles = await this.customerRepo.find({
+        where: { phone_number: phoneNumber },
+        order: { created_at: 'ASC' } // Ưu tiên bản ghi tạo trước làm master
+      });
+
+      if (profiles.length <= 1) return;
+
+      const master = profiles[0];
+      const slaves = profiles.slice(1);
+
+      for (const slave of slaves) {
+        await this.mergeTwoProfiles(master, slave);
+      }
+
+    } finally {
+      // 3. Giải phóng lock bằng script Lua an toàn
+      const releaseScript = `
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+          return redis.call("del", KEYS[1])
+        else
+          return 0
+        end
+      `;
+      await this.redis.eval(releaseScript, 1, lockKey, requestId);
+    }
+  }
+
+  /**
+   * Thực hiện gộp hai hồ sơ trong database transaction
+   */
+  private async mergeTwoProfiles(master: CrmCustomer, slave: CrmCustomer): Promise<void> {
+    await this.customerRepo.manager.transaction(async (manager) => {
+      // A. Hợp nhất thông tin cá nhân (Ưu tiên chuỗi có giá trị và dài hơn)
+      if (!master.full_name && slave.full_name) {
+        master.full_name = slave.full_name;
+      } else if (master.full_name && slave.full_name) {
+        master.full_name = master.full_name.length >= slave.full_name.length ? master.full_name : slave.full_name;
+      }
+      if (!master.email && slave.email) master.email = slave.email;
+      if (!master.location && slave.location) master.location = slave.location;
+      
+      // Gộp các định danh Social media
+      if (!master.facebook_psid && slave.facebook_psid) master.facebook_psid = slave.facebook_psid;
+      if (!master.zalo_user_id && slave.zalo_user_id) master.zalo_user_id = slave.zalo_user_id;
+
+      // B. Hợp nhất thuộc tính nhu cầu Solar (Custom Fields)
+      const overwrittenFields: Record<string, any> = {};
+      const masterCustom = master.custom_fields || {};
+      const slaveCustom = slave.custom_fields || {};
+
+      for (const [key, value] of Object.entries(slaveCustom)) {
+        if (masterCustom[key] !== undefined && masterCustom[key] !== value) {
+          // Xung đột: Ưu tiên giữ dữ liệu của profile mới nhất (slave), lưu lại giá trị cũ của master
+          overwrittenFields[key] = masterCustom[key];
+          masterCustom[key] = value;
+        } else if (masterCustom[key] === undefined) {
+          masterCustom[key] = value;
+        }
+      }
+      master.custom_fields = masterCustom;
+
+      // C. Lưu Master Profile
+      await manager.save(master);
+
+      // D. Lưu vết các trường bị ghi đè vào crm_customer_notes
+      if (Object.keys(overwrittenFields).length > 0) {
+        await manager.save(CrmCustomerNote, {
+          customer_id: master.id,
+          created_by: null, // Ghi chú hệ thống
+          content: `[SYSTEM_MERGE_OVERWRITE] Hệ thống tự động gộp hồ sơ từ profile trùng lặp (ID: ${slave.id}). ` +
+                   `Dữ liệu cũ của Master Profile đã bị thay đổi: ${JSON.stringify(overwrittenFields)}`,
+          is_pinned: false
+        });
+      }
+
+      // E. Chuyển đổi ID chủ sở hữu trong chat_conversations và crm_activities
+      await manager.createQueryBuilder()
+        .update(ChatConversation)
+        .set({ customer_id: master.id })
+        .where('customer_id = :slaveId', { slaveId: slave.id })
+        .execute();
+
+      await manager.createQueryBuilder()
+        .update(CrmActivity)
+        .set({ customer_id: master.id })
+        .where('customer_id = :slaveId', { slaveId: slave.id })
+        .execute();
+
+      // F. Xóa mềm (Soft Delete) profile phụ
+      await manager.softRemove(slave);
+
+      this.logger.log(`Hợp nhất thành công Profile phụ ${slave.id} vào Master Profile ${master.id}`);
+    });
+  }
+}
+```
+
+

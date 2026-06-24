@@ -214,3 +214,105 @@ Ghi log cảnh báo nghiêm trọng khi giải mã thất bại (có thể do sa
 }
 ```
 
+---
+
+## 8. Mẫu Log Đồng Bộ Zalo Token (Zalo Token Sync Logs)
+
+### 8.1. Log Làm Mới Token Thành Công (Token Refresh Success)
+```json
+{
+  "timestamp": "2026-06-15T20:00:00.500Z",
+  "level": "info",
+  "module": "GATEWAY",
+  "context": "ZALO_TOKEN_SYNC",
+  "message": "Zalo Access Token refreshed successfully",
+  "traceId": "job_zalo_token_sync_20260615",
+  "metadata": {
+    "channel": "ZALO",
+    "expires_in_seconds": 7200,
+    "redis_cached": true
+  }
+}
+```
+
+### 8.2. Log Làm Mới Token Thất Bại (Token Refresh Failure)
+```json
+{
+  "timestamp": "2026-06-15T20:00:01.120Z",
+  "level": "error",
+  "module": "GATEWAY",
+  "context": "ZALO_TOKEN_SYNC",
+  "message": "Zalo Access Token refresh failed",
+  "traceId": "job_zalo_token_sync_20260615",
+  "metadata": {
+    "channel": "ZALO",
+    "error_message": "Zalo API returned invalid refresh token error."
+  }
+}
+```
+
+---
+
+## 9. Mẫu Log Tự Động Hóa Bình Luận (Comment Automation Logs)
+
+### 9.1. Log Ẩn Bình Luận Nhạy Cảm & Nhắn Tin Riêng (Comment Hidden & Private Replied)
+```json
+{
+  "timestamp": "2026-06-15T16:22:00.123Z",
+  "level": "info",
+  "module": "GATEWAY",
+  "context": "COMMENT_AUTOMATION",
+  "message": "Sensitive comment hidden and processed",
+  "traceId": "t_gate_110297_trace",
+  "metadata": {
+    "comment_id": "fb_comment_uuid_9921",
+    "post_id": "fb_post_uuid_7766",
+    "sender_id": "psid_8829102",
+    "contains_phone": true,
+    "is_hidden": true,
+    "public_reply_sent": true,
+    "private_reply_sent": true
+  }
+}
+```
+
+---
+
+## 10. Mẫu Log Kiểm Tra Cửa Sổ 24h & Gắn Tag (Message Tag Policy Logs)
+
+### 10.1. Log Chặn Tin Nhắn Ngoài 24h (Message Blocked Outside 24h)
+```json
+{
+  "timestamp": "2026-06-15T16:23:00.456Z",
+  "level": "warn",
+  "module": "GATEWAY",
+  "context": "MESSAGE_POLICY_GUARD",
+  "message": "Outgoing message blocked due to policy window",
+  "traceId": "t_gate_110298_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "channel": "ZALO",
+    "last_customer_message_time": "2026-06-14T10:00:00.000Z",
+    "error_message": "OUTSIDE_24H_WINDOW: Zalo OA cấm gửi tin nhắn tự do ngoài 24h."
+  }
+}
+```
+
+### 10.2. Log Gắn Tag Tin Nhắn Ngoài 24h (Message Tag Attached)
+```json
+{
+  "timestamp": "2026-06-15T16:23:05.120Z",
+  "level": "info",
+  "module": "GATEWAY",
+  "context": "MESSAGE_POLICY_GUARD",
+  "message": "Outgoing message tag attached successfully",
+  "traceId": "t_gate_110299_trace",
+  "metadata": {
+    "conversation_id": "conv_uuid_9921",
+    "channel": "FACEBOOK",
+    "last_customer_message_time": "2026-06-14T10:00:00.000Z",
+    "tag_attached": "CONFIRMED_EVENT_UPDATE"
+  }
+}
+```
+

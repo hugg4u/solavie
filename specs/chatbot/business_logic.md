@@ -1076,7 +1076,7 @@ export class ChatbotHandbackController {
   ) {}
 
   @Post(':id/handback')
-  @RequirePermissions('chat:write')
+  @RequirePermissions('inbox.conversation.write')
   async handbackToAi(@Param('id') id: string, @Req() req: any): Promise<{ success: boolean }> {
     const conversation = await this.conversationRepository.findOneBy({ id });
     if (!conversation) {
@@ -1504,3 +1504,547 @@ export class ChatbotBookingTools {
   }
 }
 ```
+
+---
+
+## 21. Đặc Tả Thuật Toán Kiểm Tra Đồ Thị Kịch Bản (GraphValidator - DFS & BFS)
+
+Đảm bảo các kịch bản luồng tin nhắn tự do được xây dựng hợp lệ, không chứa chu trình lặp vô hạn và không có node mồ côi cô lập.
+
+```typescript
+@Injectable()
+export class GraphValidator {
+  /**
+   * Xác thực đồ thị Flow
+   */
+  validateFlowGraph(nodes: CreateNodeDto[]): { isValid: boolean; error?: string } {
+    const adjList = new Map<string, string[]>();
+    const nodeMap = new Map<string, CreateNodeDto>();
+    const allNodeIds = new Set<string>();
+
+    for (const node of nodes) {
+      nodeMap.set(node.id, node);
+      allNodeIds.add(node.id);
+      
+      const neighbors: string[] = [];
+      if (node.nextNodeId) {
+        neighbors.push(node.nextNodeId);
+      }
+      
+      // Nếu là node rẽ nhánh CONDITION, nó có thể có nhiều nhánh next nodes trong content
+      if (node.type === 'CONDITION' && node.content?.branches) {
+        for (const branch of node.content.branches) {
+          if (branch.nextNodeId) {
+            neighbors.push(branch.nextNodeId);
+          }
+        }
+        if (node.content.defaultNextNodeId) {
+          neighbors.push(node.content.defaultNextNodeId);
+        }
+      }
+      adjList.set(node.id, neighbors);
+    }
+
+    // 1. DFS phát hiện chu trình (vòng lặp vô hạn)
+    const visited = new Set<string>();
+    const recStack = new Set<string>();
+
+    const hasCycle = (nodeId: string): boolean => {
+      if (recStack.has(nodeId)) return true;
+      if (visited.has(nodeId)) return false;
+
+      visited.add(nodeId);
+      recStack.add(nodeId);
+
+      const neighbors = adjList.get(nodeId) || [];
+      for (const neighbor of neighbors) {
+        if (hasCycle(neighbor)) return true;
+      }
+
+      recStack.delete(nodeId);
+      return false;
+    };
+
+    // Giả sử node đầu tiên trong mảng là root node (hoặc node được chỉ định)
+    const rootNode = nodes[0];
+    if (!rootNode) {
+      return { isValid: false, error: 'Flow không chứa node nào.' };
+    }
+
+    if (hasCycle(rootNode.id)) {
+      return { isValid: false, error: 'Phát hiện chu trình (vòng lặp vô hạn) trong kịch bản.' };
+    }
+
+    // 2. BFS phát hiện node cô lập (unreachable nodes)
+    const reachable = new Set<string>();
+    const queue: string[] = [rootNode.id];
+    reachable.add(rootNode.id);
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      const neighbors = adjList.get(curr) || [];
+      for (const neighbor of neighbors) {
+        if (!reachable.has(neighbor)) {
+          reachable.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    if (reachable.size < allNodeIds.size) {
+      const unreachableNodes = [...allNodeIds].filter(id => !reachable.has(id));
+      return { 
+        isValid: false, 
+        error: `Phát hiện node cô lập không thể đi tới từ node gốc: ${unreachableNodes.join(', ')}` 
+      };
+    }
+
+    return { isValid: true };
+  }
+}
+```
+
+---
+
+## 22. Đặc Tả Core Engine Chạy Kịch Bản Tĩnh (FlowExecutorService)
+
+Chịu trách nhiệm duyệt các node kịch bản, thực thi các hành động CRM hoặc Webhook, rẽ nhánh điều kiện và gửi tin nhắn ra các cổng gateway.
+
+```typescript
+@Injectable()
+export class FlowExecutorService {
+  constructor(
+    @InjectRepository(NodeEntity)
+    private readonly nodeRepo: Repository<NodeEntity>,
+    @InjectRepository(ChatConversation)
+    private readonly conversationRepo: Repository<ChatConversation>,
+    private readonly gatewayApiService: GatewayApiService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  /**
+   * Thực thi một Node cụ thể trong cuộc hội thoại
+   */
+  async executeNode(conversationId: string, nodeId: string): Promise<void> {
+    const conversation = await this.conversationRepo.findOneBy({ id: conversationId });
+    if (!conversation || conversation.state !== 'FLOW_EXECUTING') return;
+
+    const node = await this.nodeRepo.findOneBy({ id: nodeId });
+    if (!node) return;
+
+    this.logger.log(`Thực thi Node ${node.id} (Type: ${node.type}) cho Conversation ${conversationId}`);
+
+    switch (node.type) {
+      case 'MESSAGE':
+        // Gửi tin nhắn qua Webhook/Gateway API
+        await this.gatewayApiService.sendMessage({
+          channel: conversation.channel,
+          recipientId: conversation.sender_id,
+          text: node.content.text,
+          buttons: node.content.buttons || [], // Tối đa 3 nút
+          carousel: node.content.carousel || null
+        });
+
+        // Đi tiếp tới node tiếp theo
+        if (node.nextNodeId) {
+          await this.executeNode(conversationId, node.nextNodeId);
+        } else {
+          // Kết thúc Flow, trả lại trạng thái AUTOMATIC để AI tiếp quản
+          await this.finishFlow(conversationId);
+        }
+        break;
+
+      case 'ACTION':
+        // Thực thi các hành động CRM
+        if (node.content.actionType === 'ADD_TAG') {
+          this.eventEmitter.emit('crm.customer.add_tag', {
+            customerId: conversation.customer_id,
+            tag: node.content.tag
+          });
+        } else if (node.content.actionType === 'ASSIGN_SALES') {
+          this.eventEmitter.emit('crm.customer.assign_sales', {
+            customerId: conversation.customer_id,
+            salesId: node.content.salesId
+          });
+        } else if (node.content.actionType === 'WEBHOOK') {
+          // Bắn dữ liệu ra API ngoài
+          await this.triggerExternalWebhook(node.content.url, {
+            conversationId,
+            customerId: conversation.customer_id
+          });
+        }
+
+        // Chuyển tiếp ngay
+        if (node.nextNodeId) {
+          await this.executeNode(conversationId, node.nextNodeId);
+        } else {
+          await this.finishFlow(conversationId);
+        }
+        break;
+
+      case 'CONDITION':
+        // Đánh giá điều kiện dựa trên thông tin khách hàng từ CRM
+        const customer = await this.getCustomerData(conversation.customer_id);
+        let targetNextNodeId = node.content.defaultNextNodeId || null;
+
+        for (const branch of node.content.branches || []) {
+          if (this.evaluateConditionExpression(customer, branch.expression)) {
+            targetNextNodeId = branch.nextNodeId;
+            break;
+          }
+        }
+
+        if (targetNextNodeId) {
+          await this.executeNode(conversationId, targetNextNodeId);
+        } else {
+          await this.finishFlow(conversationId);
+        }
+        break;
+    }
+  }
+
+  private async finishFlow(conversationId: string): Promise<void> {
+    await this.conversationRepo.update(conversationId, { state: 'AUTOMATIC' });
+  }
+
+  private evaluateConditionExpression(customer: any, expression: string): boolean {
+    // Đánh giá đơn giản, ví dụ: "location == 'Đồng Nai'" hoặc "monthly_bill > 2000000"
+    const [field, operator, val] = expression.split(' ');
+    const customerVal = customer[field] || customer.custom_fields?.[field];
+
+    if (operator === '==') return String(customerVal) === val.replace(/['"]/g, '');
+    if (operator === '>') return Number(customerVal) > Number(val);
+    if (operator === '<') return Number(customerVal) < Number(val);
+    return false;
+  }
+}
+```
+
+---
+
+## 23. Đặc Tả Nhận Diện Từ Khóa Kích Hoạt (KeywordRouterService)
+
+Quét tin nhắn đầu vào của khách để so khớp từ khóa và kích hoạt Flow kịch bản.
+
+```typescript
+@Injectable()
+export class KeywordRouterService {
+  constructor(
+    @InjectRepository(KeywordEntity)
+    private readonly keywordRepo: Repository<KeywordEntity>,
+    @InjectRepository(ChatConversation)
+    private readonly conversationRepo: Repository<ChatConversation>,
+    private readonly flowExecutor: FlowExecutorService,
+  ) {}
+
+  /**
+   * Kiểm tra tin nhắn và định tuyến nếu khớp từ khóa
+   * @returns true nếu khớp từ khóa và đã kích hoạt luồng, false nếu không khớp
+   */
+  async matchAndRoute(conversationId: string, messageText: string): Promise<boolean> {
+    const cleanText = messageText.toLowerCase().trim();
+    const activeKeywords = await this.keywordRepo.find({ where: { isActive: true } });
+
+    for (const kw of activeKeywords) {
+      let isMatched = false;
+      const cleanKw = kw.keyword.toLowerCase().trim();
+
+      if (kw.matchType === 'EXACT') {
+        isMatched = cleanText === cleanKw;
+      } else if (kw.matchType === 'CONTAINS') {
+        isMatched = cleanText.includes(cleanKw);
+      } else if (kw.matchType === 'STARTS_WITH') {
+        isMatched = cleanText.startsWith(cleanKw);
+      }
+
+      if (isMatched) {
+        this.logger.log(`Khớp từ khóa "${kw.keyword}" (${kw.matchType}) cho Conversation ${conversationId}. Kích hoạt Flow ${kw.flowId}`);
+        
+        // Cập nhật trạng thái hội thoại sang chạy luồng
+        await this.conversationRepo.update(conversationId, { state: 'FLOW_EXECUTING' });
+
+        // Lấy node đầu tiên của Flow được gán để bắt đầu thực thi
+        const firstNode = await this.findFirstNodeOfFlow(kw.flowId);
+        if (firstNode) {
+          // Kích hoạt thực thi bất đồng bộ
+          this.flowExecutor.executeNode(conversationId, firstNode.id);
+        }
+        return true;
+      }
+    }
+
+    return false;
+  }
+}
+```
+
+---
+
+## 24. Đặc Tả Chuỗi Chăm Sóc Tự Động (SequenceSchedulerService)
+
+Lập lịch gửi tin nhắn chăm sóc bám đuổi qua BullMQ hàng đợi delay và tự động hủy đăng ký khi phát hiện khách hàng tương tác thủ công.
+
+```typescript
+@Injectable()
+export class SequenceSchedulerService {
+  constructor(
+    @InjectQueue('chatbot-sequence') private readonly sequenceQueue: Queue,
+    @InjectRepository(SequenceSubscriberEntity)
+    private readonly subscriberRepo: Repository<SequenceSubscriberEntity>,
+    @InjectRepository(SequenceStepEntity)
+    private readonly stepRepo: Repository<SequenceStepEntity>,
+  ) {}
+
+  /**
+   * Đăng ký khách hàng vào chuỗi chăm sóc
+   */
+  async subscribeCustomer(sequenceId: string, customerId: string): Promise<void> {
+    // 1. Tạo bản ghi subscriber
+    const firstStep = await this.stepRepo.findOne({
+      where: { sequenceId },
+      order: { sortOrder: 'ASC' }
+    });
+
+    if (!firstStep) return;
+
+    const nextExecution = new Date(Date.now() + firstStep.delaySeconds * 1000);
+    
+    await this.subscriberRepo.save({
+      sequenceId,
+      customerId,
+      currentStepId: firstStep.id,
+      status: 'ACTIVE',
+      nextExecutionAt: nextExecution
+    });
+
+    // 2. Thêm Delay Job vào BullMQ
+    const jobId = `sequence:${sequenceId}:${customerId}:${firstStep.id}`;
+    await this.sequenceQueue.add(
+      'execute-step',
+      { sequenceId, customerId, stepId: firstStep.id },
+      { jobId, delay: firstStep.delaySeconds * 1000, removeOnComplete: true, removeOnFail: true }
+    );
+  }
+
+  /**
+   * Hủy đăng ký chuỗi của khách hàng (khi khách nhắn tin tay hoặc Sale tiếp quản)
+   */
+  async unsubscribeCustomer(sequenceId: string, customerId: string): Promise<void> {
+    const subscriber = await this.subscriberRepo.findOneBy({ sequenceId, customerId });
+    if (!subscriber) return;
+
+    subscriber.status = 'UNSUBSCRIBED';
+    subscriber.nextExecutionAt = null;
+    await this.subscriberRepo.save(subscriber);
+
+    // Xóa job trong BullMQ nếu chưa chạy
+    if (subscriber.currentStepId) {
+      const jobId = `sequence:${sequenceId}:${customerId}:${subscriber.currentStepId}`;
+      const job = await this.sequenceQueue.getJob(jobId);
+      if (job) {
+        await job.remove();
+      }
+    }
+  }
+}
+
+@Processor('chatbot-sequence')
+export class ChatbotSequenceConsumer {
+  constructor(
+    @InjectRepository(SequenceSubscriberEntity)
+    private readonly subscriberRepo: Repository<SequenceSubscriberEntity>,
+    @InjectRepository(SequenceStepEntity)
+    private readonly stepRepo: Repository<SequenceStepEntity>,
+    @InjectRepository(ChatConversation)
+    private readonly conversationRepo: Repository<ChatConversation>,
+    private readonly flowExecutor: FlowExecutorService,
+    @InjectQueue('chatbot-sequence') private readonly sequenceQueue: Queue,
+  ) {}
+
+  @Process('execute-step')
+  async handleStepExecution(job: Job<{ sequenceId: string, customerId: string, stepId: string }>) {
+    const { sequenceId, customerId, stepId } = job.data;
+    
+    const subscriber = await this.subscriberRepo.findOneBy({ sequenceId, customerId });
+    if (!subscriber || subscriber.status !== 'ACTIVE') return;
+
+    // Kiểm tra trạng thái hội thoại của khách hàng trong DB.
+    // Nếu trạng thái là MANUAL, ta tự động dừng gửi chuỗi (Unsubscribe)
+    const conversation = await this.conversationRepo.findOne({
+      where: { customer_id: customerId }
+    });
+
+    if (conversation && conversation.state === 'MANUAL') {
+      subscriber.status = 'UNSUBSCRIBED';
+      subscriber.nextExecutionAt = null;
+      await this.subscriberRepo.save(subscriber);
+      return;
+    }
+
+    const currentStep = await this.stepRepo.findOneBy({ id: stepId });
+    if (!currentStep) return;
+
+    // 1. Kích hoạt Flow cho cuộc trò chuyện
+    if (conversation) {
+      await this.conversationRepo.update(conversation.id, { state: 'FLOW_EXECUTING' });
+      const firstNode = await this.findFirstNodeOfFlow(currentStep.flowId);
+      if (firstNode) {
+        await this.flowExecutor.executeNode(conversation.id, firstNode.id);
+      }
+    }
+
+    // 2. Tìm bước tiếp theo
+    const nextStep = await this.stepRepo.findOne({
+      where: { sequenceId, sortOrder: currentStep.sortOrder + 1 },
+      order: { sortOrder: 'ASC' }
+    });
+
+    if (nextStep) {
+      const nextExecution = new Date(Date.now() + nextStep.delaySeconds * 1000);
+      subscriber.currentStepId = nextStep.id;
+      subscriber.nextExecutionAt = nextExecution;
+      await this.subscriberRepo.save(subscriber);
+
+      // Thêm job tiếp theo vào hàng đợi delay
+      const nextJobId = `sequence:${sequenceId}:${customerId}:${nextStep.id}`;
+      await this.sequenceQueue.add(
+        'execute-step',
+        { sequenceId, customerId, stepId: nextStep.id },
+        { jobId: nextJobId, delay: nextStep.delaySeconds * 1000, removeOnComplete: true, removeOnFail: true }
+      );
+    } else {
+      // Hoàn thành chuỗi
+      subscriber.status = 'COMPLETED';
+      subscriber.currentStepId = null;
+      subscriber.nextExecutionAt = null;
+      await this.subscriberRepo.save(subscriber);
+    }
+  }
+}
+```
+
+---
+
+## 25. Đặc Tả Gửi Tin Nhắn Hàng Loạt & Circuit Breaker (BroadcastWorker)
+
+Worker xử lý bất đồng bộ các chiến dịch gửi tin hàng loạt (chia lô 50 khách), áp dụng giãn cách rate limiting chống khóa page/OA, dời lịch khi rơi vào giờ giới nghiêm (22h-7h) và tự động ngắt khẩn cấp (Circuit Breaker) khi lỗi 20 tin liên tiếp.
+
+```typescript
+@Processor('facebook-broadcast')
+@Processor('zalo-broadcast')
+export class BroadcastWorker {
+  constructor(
+    @InjectRedis() private readonly redis: Redis,
+    @InjectRepository(BroadcastCampaignEntity)
+    private readonly campaignRepo: Repository<BroadcastCampaignEntity>,
+    @InjectRepository(BroadcastLogEntity)
+    private readonly logRepo: Repository<BroadcastLogEntity>,
+    private readonly flowExecutor: FlowExecutorService,
+    private readonly gatewayApiService: GatewayApiService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  @Process('send-broadcast')
+  async handleSend(job: Job<{ campaignId: string, customerId: string }>) {
+    const { campaignId, customerId } = job.data;
+    const campaign = await this.campaignRepo.findOneBy({ id: campaignId });
+    if (!campaign || campaign.status !== 'PROCESSING') return;
+
+    // 1. Kiểm tra Circuit Breaker trong Redis
+    const errorCounterKey = `errors:broadcast:campaign:${campaignId}`;
+    const errorsCount = await this.redis.get(errorCounterKey);
+    if (errorsCount && Number(errorsCount) >= 20) {
+      // Đã đạt ngưỡng 20 lỗi liên tiếp -> Dừng chiến dịch
+      await this.campaignRepo.update(campaignId, { status: 'FAILED' });
+      
+      // Gửi event outbox cảnh báo khẩn cấp cho IT Admin
+      this.eventEmitter.emit('chat.broadcast.failed_circuit_breaker', {
+        campaignId,
+        campaignName: campaign.name,
+        errorReason: 'Đạt ngưỡng 20 lỗi liên tiếp, access token hoặc fanpage bị khóa.'
+      });
+      return;
+    }
+
+    // 2. Kiểm tra giờ giới nghiêm (Quiet Hours: 22:00 - 07:00)
+    const now = new Date();
+    const vnTime = new Date(now.getTime() + (now.getTimezoneOffset() + 420) * 60 * 1000);
+    const vnHour = vnTime.getHours();
+
+    if (vnHour >= 22 || vnHour < 7) {
+      // Trì hoãn gửi: dời lịch sang 08:00 sáng hôm sau
+      const targetTime = new Date(vnTime);
+      targetTime.setHours(8, 0, 0, 0);
+      if (vnHour >= 22) targetTime.setDate(targetTime.getDate() + 1);
+      
+      const delayMs = targetTime.getTime() - vnTime.getTime();
+      
+      // Cấu hình gửi lại qua BullMQ
+      await job.queue.add(
+        'send-broadcast',
+        { campaignId, customerId },
+        { delay: delayMs, removeOnComplete: true }
+      );
+      return;
+    }
+
+    // 3. Thực hiện gửi tin
+    const customer = await this.getCustomerData(customerId);
+    const recipientId = campaign.channel === 'FACEBOOK' ? customer.facebook_psid : customer.zalo_user_id;
+
+    if (!recipientId) {
+      await this.logRepo.save({
+        campaignId,
+        customerId,
+        status: 'SKIPPED',
+        errorMessage: 'Khách hàng không liên kết ID Facebook/Zalo.'
+      });
+      return;
+    }
+
+    // Áp dụng Rate Limiting giãn cách tin nhắn (Facebook 1s, Zalo 0.5s)
+    const delay = campaign.channel === 'FACEBOOK' ? 1000 : 500;
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    try {
+      // Tìm node đầu tiên của Flow
+      const firstNode = await this.findFirstNodeOfFlow(campaign.flowId);
+      if (!firstNode) throw new Error('Không tìm thấy node cấu hình của Flow');
+
+      // Tạo cuộc hội thoại giả lập hoặc tìm cuộc hội thoại hiện tại để gắn flow
+      const conversationId = await this.findOrCreateConversation(customer, campaign.channel);
+
+      // Kích hoạt chạy kịch bản gửi tin
+      await this.flowExecutor.executeNode(conversationId, firstNode.id);
+
+      // Ghi log thành công
+      await this.logRepo.save({
+        campaignId,
+        customerId,
+        status: 'SENT',
+        sentAt: new Date()
+      });
+
+      // Tăng số lượng gửi thành công và reset error counter của Circuit Breaker
+      await this.campaignRepo.increment({ id: campaignId }, 'sentCount', 1);
+      await this.redis.del(errorCounterKey);
+
+    } catch (error) {
+      // Ghi log thất bại
+      await this.logRepo.save({
+        campaignId,
+        customerId,
+        status: 'FAILED',
+        errorMessage: error.message
+      });
+
+      await this.campaignRepo.increment({ id: campaignId }, 'failedCount', 1);
+      
+      // Tăng counter Circuit Breaker
+      await this.redis.incr(errorCounterKey);
+      await this.redis.expire(errorCounterKey, 3600); // 1h
+    }
+  }
+}
+```
+

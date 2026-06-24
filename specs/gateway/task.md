@@ -1,22 +1,25 @@
 # Task Lập Trình Module Gateway
 
-- `[ ]` **Fastify Setup:** Cấu hình NestJS để chạy trên nền Fastify.
-- `[ ]` **Channel Configuration:** Viết API quản lý thông số kết nối FB/Zalo, lưu vào DB `gw_channel_configurations`.
-- `[ ]` **Signature Middleware:** Viết Guard/Middleware verify chữ ký Facebook HMAC-SHA256.
-- `[ ]` **Zalo Middleware:** Viết Guard/Middleware verify chữ ký Zalo OA.
-- `[ ]` **Parser & Mapper:** Viết logic transform các format JSON dị biệt của FB/Zalo về chuẩn `UnifiedMessage` interface.
-- `[ ]` **Redis BullMQ Integration:** Setup cấu hình kết nối Redis.
-- `[ ]` **Producer implementation:** Đẩy `UnifiedMessage` vào Queue và test độ trễ phản hồi HTTP 200.
-- `[ ]` **Outbox Migration & Entity:** Tạo migration và Entity cho bảng `gw_incoming_events` làm Durability Store. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
-- `[ ]` **Outbox Transaction Logic:** Viết logic NestJS bọc luồng webhook nhận tin nhắn trong DB Transaction, ghi event và push queue an toàn. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
-- `[ ]` **Crypto Service (AES-256-GCM):** Xây dựng `GatewayCryptoService` mã hóa/giải mã API Keys và Page Access Tokens.
-- `[ ]` **Background Recovery Worker:** Triển khai background worker `@Interval` tự động quét các tin nhắn `PENDING` bị kẹt để gửi lại.
+- `[x]` **Fastify Setup:** Cấu hình NestJS để chạy trên nền Fastify.
+- `[x]` **Channel Configuration:** Viết API quản lý thông số kết nối FB/Zalo, lưu vào DB `gw_channel_configurations`.
+- `[x]` **Signature Middleware:** Viết Guard/Middleware verify chữ ký Facebook HMAC-SHA256.
+- `[x]` **Zalo Middleware:** Viết Guard/Middleware verify chữ ký Zalo OA.
+- `[x]` **Parser & Mapper:** Viết logic transform các format JSON dị biệt của FB/Zalo về chuẩn `UnifiedMessage` interface.
+- `[x]` **Redis BullMQ Integration:** Setup cấu hình kết nối Redis.
+- `[x]` **Producer implementation:** Đẩy `UnifiedMessage` vào Queue và test độ trễ phản hồi HTTP 200.
+- `[x]` **Outbox Migration & Entity:** Tạo migration và Entity cho bảng `gw_incoming_events` làm Durability Store. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[x]` **Outbox Transaction Logic:** Viết logic NestJS bọc luồng webhook nhận tin nhắn trong DB Transaction, ghi event và push queue an toàn. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
+- `[x]` **Crypto Service (AES-256-GCM):** Xây dựng `GatewayCryptoService` mã hóa/giải mã API Keys và Page Access Tokens.
+- `[x]` **Background Recovery Worker:** Triển khai background worker `@Interval` tự động quét các tin nhắn `PENDING` bị kẹt để gửi lại.
 - `[x]` **Redis Isolation Config:** Cấu hình 2 biến môi trường `REDIS_CACHE_URL` và `REDIS_QUEUE_URL` tách biệt, thiết lập Docker-compose (Đã gộp vào [task.md (DevOps)](file:///d:/workspace/project/solavie/specs/devops/task.md)).
-- `[ ]` **BullMQ Connection sharing & cleanup config:** Triển khai cấu hình shared `ioredis` client và default job options (attempts, backoff, removeOnComplete) khi import BullModule.
-- `[ ]` **Supported Providers Endpoint:** Thiết lập enum/readonly constant các hãng LLM và route `GET /api/v1/gateway/providers/supported` trả về danh sách tĩnh kèm caching group.
-- `[ ]` **Configured Providers Endpoint:** Thiết lập route `GET /api/v1/gateway/providers/configured` truy vấn DB, thực hiện masking API keys nhạy cảm (không hiển thị key thô).
-- `[ ]` **Providers Redis Caching & Invalidation:** Tích hợp cache Redis (TTL 300s) cho API configured, triển khai logic clear cache khi Admin ghi dữ liệu hoặc khi sập ví/cooldown.
-- `[ ]` **Migration for Prompt Variables:** Tạo migration và Entity cho bảng `gw_prompt_variables` lưu trữ các biến động của Admin.
-- `[ ]` **Prompt Variables CRUD Endpoint:** Triển khai API `POST /api/v1/gateway/prompts/variables` và `GET /api/v1/gateway/prompts/variables`, bọc bởi Guard phân quyền `prompt:write` và `prompt:read`.
-- `[ ]` **Prompt Injection Filter:** Tích hợp regex pattern blacklist để kiểm duyệt và chặn đứng các chuỗi tấn công Prompt Injection ở đầu vào API.
-- `[ ]` **Prompt Variables Caching & Invalidation:** Cấu hình cache Redis (TTL 300s) trên `REDIS_CACHE_URL` cho biến prompt và trigger xóa cache khi Admin thay đổi giá trị.
+- `[x]` **BullMQ Connection sharing & cleanup config:** Triển khai cấu hình shared `ioredis` client và default job options (attempts, backoff, removeOnComplete) khi import BullModule.
+- `[x]` **Supported Providers Endpoint:** Thiết lập enum/readonly constant các hãng LLM và route `GET /api/v1/gateway/providers/supported` trả về danh sách tĩnh kèm caching group.
+- `[x]` **Configured Providers Endpoint:** Thiết lập route `GET /api/v1/gateway/providers/configured` truy vấn DB, thực hiện masking API keys nhạy cảm (không hiển thị key thô).
+- `[x]` **Providers Redis Caching & Invalidation:** Tích hợp cache Redis (TTL 300s) cho API configured, triển khai logic clear cache khi Admin ghi dữ liệu hoặc khi sập ví/cooldown.
+- `[x]` **Migration for Prompt Variables:** Tạo migration và Entity cho bảng `gw_prompt_variables` lưu trữ các biến động của Admin.
+- `[x]` **Prompt Variables Caching & Invalidation:** Cấu hình cache Redis (TTL 300s) trên `REDIS_CACHE_URL` cho biến prompt và trigger xóa cache khi Admin thay đổi giá trị.
+- `[ ]` **Zalo Token Sync Worker:** Triển khai cron worker `@Cron` chạy định kỳ mỗi 20 giờ để tự động giải mã credentials, gọi API oauth của Zalo OA để làm mới access token, mã hóa credentials mới lưu vào DB và cập nhật cache Redis.
+- `[ ]` **Webhook Carousel & List Parsers:** Cập nhật `WebhookPayloadParser` để hỗ trợ phân tích cấu trúc tin nhắn Carousel (Facebook) và List (Zalo), trích xuất các hành động click của khách hàng và chuyển đổi sang định dạng UnifiedMessage.
+- `[ ]` **Comment Automation Webhook & Action:** Triển khai `CommentAutomationService` lắng nghe sự kiện bình luận Facebook, quét Regex phát hiện SĐT để ẩn bình luận (Facebook Graph API), tự động trả lời công khai và gửi Private Message tin nhắn riêng vào hộp thư khách.
+- `[ ]` **Growth Tools Parameter Extractor:** Cập nhật webhook receiver để trích xuất tham số tiếp thị `ref` (Facebook) hoặc `tracking_info` (Zalo QR) khi bắt đầu hội thoại, đưa vào payload `UnifiedMessage` phục vụ kích hoạt Flow.
+- `[ ]` **Message Tag Policy Guard:** Triển khai `MessagePolicyGuard` kiểm tra cửa sổ 24h. Tự động đính kèm Message Tags (`CONFIRMED_EVENT_UPDATE` hoặc `HUMAN_AGENT`) cho Facebook khi gửi ngoài 24h, hoặc tự động chặn gửi tin nhắn tự do và trả lỗi `OUTSIDE_24H_WINDOW` cho Zalo OA.

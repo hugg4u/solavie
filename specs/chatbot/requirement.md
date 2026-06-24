@@ -68,3 +68,36 @@ Module Chatbot chịu trách nhiệm tiếp nhận tin nhắn từ người dùn
 - **Rào cản kiểm thực dữ liệu (Validation Gate)**: Chatbot cần tự động kiểm tra định dạng số điện thoại Việt Nam trước khi gửi lệnh tạo lịch nhằm giảm thiểu lỗi DB transaction.
 - **Chỉ định Sales Rep**: Khi khách đặt lịch qua link có chứa tham số chỉ định Sales Rep (`?host_id=`), chatbot phải truyền tham số này vào công cụ để khóa lịch rảnh đối với Sales đó.
 
+### 2.12. Trình Tạo Luồng Tự Do & Từ Khóa Kích Hoạt (Flows & Keywords)
+
+Để giảm tải cho AI Agent và tăng khả năng thiết lập kịch bản marketing dẫn dắt khách hàng:
+-   **Form-based Flow Composer UI (Phase 1):**
+    -   Cho phép Admin cấu hình kịch bản flows mà không cần visual drag-and-drop builder phức tạp ở Phase 1. Thiết kế sử dụng giao diện điền Form: Cột trái hiển thị danh sách các Node có trong kịch bản; Cột giữa hiển thị biểu mẫu cấu hình chi tiết cho Node đang chọn.
+    -   Hỗ trợ 4 loại Node cốt lõi:
+        -   `MESSAGE`: Gửi tin nhắn văn bản kèm tối đa 3 nút bấm (Buttons) hoặc Carousel Group (Thẻ trượt chứa ảnh + tiêu đề + mô tả + nút).
+        -   `ACTION`: Tự động gắn tag CRM cho khách hàng, phân công Sales Rep, hoặc gửi dữ liệu qua API ngoài.
+        -   `CONDITION`: Rẽ nhánh luồng dựa trên thuộc tính của khách hàng (VD: Địa phương = "Đồng Nai" rẽ nhánh A, ngược lại rẽ nhánh B).
+    -   **Graph Validation Gate:** Backend bắt buộc phải xác thực tính toàn vẹn của đồ thị (DFS phát hiện chu trình vòng lặp, BFS phát hiện node cô lập) trước khi lưu.
+-   **Từ Khóa Kích Hoạt (Keywords Matcher):**
+    -   So khớp tin nhắn khách hàng với danh sách từ khóa tĩnh được định nghĩa trước.
+    -   Hỗ trợ 3 kiểu khớp: Khớp chính xác (`EXACT`), Chứa từ khóa (`CONTAINS`), Bắt đầu bằng từ khóa (`STARTS_WITH`).
+    -   Khi khớp, hệ thống tự động đổi `bot_state` của hội thoại thành `FLOW_EXECUTING` và gửi node đầu tiên của Flow được gán.
+
+### 2.13. Chuỗi Chăm Sóc (Sequences) & Gửi Tin Hàng Loạt (Broadcasting)
+
+-   **Chuỗi chăm sóc tự động (Sequences):**
+    -   Gửi tin nhắn bám đuổi khách hàng theo kịch bản thời gian trì hoãn (Delay Timeline, ví dụ: Sau khi đăng ký 1 ngày gửi tin A, sau 3 ngày gửi tin B).
+    -   Sử dụng hàng đợi delay của BullMQ (`solavie:chatbot-sequence`) để lên lịch chạy ngầm.
+    -   Tự động dừng gửi chuỗi (Unsubscribe) ngay khi khách hàng có phản hồi chat tay hoặc Sales Rep chủ động tiếp quản (`bot_state = MANUAL`).
+-   **Công cụ tăng trưởng (Growth Tools):**
+    -   Cho phép sinh link tiếp thị (`https://solavie.vn/ref/fb_ads_june`) hoặc mã QR Code chứa tham số `ref_parameter`.
+    -   Khi khách quét mã/click link dẫn vào inbox Messenger/Zalo OA, Gateway bóc tách tham số và kích hoạt kịch bản Flow tương ứng.
+-   **Gửi tin hàng loạt (Broadcasting Engine):**
+    -   Lên chiến dịch gửi tin nhắn chủ động hàng loạt tới tệp khách hàng được lọc động từ CRM theo các điều kiện (địa phương, giai đoạn lead, mức độ tiềm năng).
+    -   **Chạy bất đồng bộ:** Sử dụng BullMQ (`solavie:facebook-broadcast`, `solavie:zalo-broadcast`) để xử lý tác vụ ngầm.
+    -   **Chia lô & Giãn cách (Rate Limiting):** Phân chia danh sách thành các lô 50 khách hàng. Áp dụng cơ chế nghỉ tự động (Facebook delay 1s, Zalo delay 0.5s giữa các tin) để chống spam và tránh bị block fanpage/OA.
+    -   **Giờ giới nghiêm (Quiet Hours):** Tự động hoãn và dời lịch gửi sang 08:00 sáng hôm sau đối với các tin nhắn rơi vào khung giờ 22:00 - 07:00 nhằm tôn trọng khách hàng và tuân thủ chính sách Zalo.
+    -   **Ngắt bảo vệ (Circuit Breaker):** Tự động tạm dừng chiến dịch và gửi cảnh báo email/In-app cho IT Admin thông qua Outbox Pattern nếu số tin gửi thất bại liên tiếp đạt ngưỡng 20 tin (do sập access token hoặc fanpage bị hạn chế).
+    -   **Thống kê chi tiết:** Hiển thị biểu đồ thống kê thời gian thực về tỷ lệ gửi thành công, tỷ lệ thất bại, tỷ lệ click nút hành động trong tin nhắn của chiến dịch.
+
+

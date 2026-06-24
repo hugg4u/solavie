@@ -343,7 +343,7 @@ notification_logs UPDATE status='SKIPPED', skip_reason='APPOINTMENT_CANCELLED'
 
 ---
 
-## 7. Zalo ZNS Integration — Chi Tiết Kỹ Thuật
+## 7. Zalo ZNS Integration & Fallback AWS SES — Chi Tiết Kỹ Thuật
 
 ### 7.1. Yêu cầu tiên quyết
 - Solavie cần đăng ký template ZNS với Zalo và nhận `template_id` cho từng loại thông báo.
@@ -353,40 +353,67 @@ notification_logs UPDATE status='SKIPPED', skip_reason='APPOINTMENT_CANCELLED'
   3. **Nhắc nhở 1h** (`appointment.reminder_1h`): Nhắc kèm link Google Meet (nếu có).
   4. **Hủy cuộc hẹn** (`appointment.cancelled`): Thông báo hủy và hướng dẫn đặt lại.
 
-### 7.2. ZaloProvider Logic
+### 7.2. ZaloProvider Logic & Phone Normalization
 ```typescript
 // notification/providers/zalo.provider.ts
 
 async send(payload: NotificationPayload): Promise<DeliveryResult> {
-  // Kiểm tra zalo_user_id tồn tại
+  // Kiểm tra số điện thoại tồn tại
   if (!payload.to) {
-    return { success: false, error: 'NO_ZALO_USER_ID' };
+    return { success: false, error: 'NO_PHONE_NUMBER' };
   }
 
-  // Gọi ZNS API
-  const response = await this.zaloClient.sendZNS({
-    phone: payload.to,      // hoặc user_id tùy cấu hình OA
-    template_id: payload.templateId,
-    template_data: payload.templateData,
-    tracking_id: payload.metadata?.idempotencyKey,
-  });
+  // Chuẩn hóa số điện thoại về định dạng 84xxxxxxxxx (Zalo ZNS yêu cầu)
+  const normalizedPhone = this.normalizePhoneNumber(payload.to);
 
-  return {
-    success: response.error === 0,
-    messageId: response.data?.zns_msg_id,
-    error: response.message,
-  };
+  try {
+    // Gọi ZNS API thực tế thông qua Zalo OA Client
+    const response = await this.zaloClient.sendZNS({
+      phone: normalizedPhone,
+      template_id: payload.templateId,
+      template_data: payload.templateData,
+      tracking_id: payload.metadata?.idempotencyKey,
+    });
+
+    return {
+      success: response.error === 0,
+      messageId: response.data?.zns_msg_id,
+      error: response.error !== 0 ? `Zalo ZNS API Error ${response.error}: ${response.message}` : undefined,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: `Network/API Connection Error: ${err.message}`,
+    };
+  }
+}
+
+private normalizePhoneNumber(phone: string): string {
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('0')) {
+    cleaned = '84' + cleaned.substring(1);
+  }
+  if (!cleaned.startsWith('84')) {
+    cleaned = '84' + cleaned;
+  }
+  return cleaned;
 }
 ```
 
-### 7.3. Fallback Strategy
-Nếu khách hàng không có `zalo_user_id` → tự động chuyển sang gửi Email:
+### 7.3. Fallback Strategy (AWS SES Fallback)
+Khi `ZaloWorker` xử lý một Job Zalo ZNS nhưng thất bại (do số điện thoại khách hàng không đăng ký Zalo, do token OA bị hết hạn, do lỗi kết nối, hoặc do hết hạn mức gửi), Job sẽ tự động chuyển sang gửi Email qua AWS SES:
 ```
-ZaloWorker.process():
-  → ZaloProvider.send() → { success: false, error: 'NO_ZALO_USER_ID' }
-  → Fallback: EmailWorker.process(emailPayload)
-  → notification_logs UPDATE channel='email', skip_reason='ZALO_FALLBACK_EMAIL'
+ZaloWorker.process(job):
+  1. Thử gửi Zalo ZNS: ZaloProvider.send(znsPayload)
+  2. Nếu ZaloProvider.send() thành công -> update notification_logs set status='SENT', channel='zalo'
+  3. Nếu ZaloProvider.send() thất bại (success = false):
+     - Ghi nhận lỗi vào log của job.
+     - Kiểm tra nếu khách hàng có email (trích xuất từ context):
+       - Gọi EmailProvider.send(emailPayload) gửi qua AWS SES.
+       - Cập nhật notification_logs: status='SENT', channel='email', error_message='ZNS Failed: [error_detail]. Fallbacked to SES Email.'
+     - Nếu khách hàng không có email -> update notification_logs set status='FAILED', error_message='ZNS Failed: [error_detail]. No email found for fallback.'
 ```
+
 
 ---
 
@@ -417,7 +444,7 @@ BullModule.registerQueue({
 
 ### 9.1. Lấy danh sách Nhật ký gửi (Notification Logs - Admin/Manager)
 *   **Method & Route:** `GET /api/v1/notification/logs`
-*   **Permission:** `RequirePermissions('notification.logs.read')`
+*   **Permission:** `RequirePermissions('notification.log.read')`
 *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
 *   *Search fields:* `log.recipientContact`, `log.eventType`.
 *   *Filter fields:* `status`, `channel`, `recipientType`.
@@ -426,7 +453,7 @@ BullModule.registerQueue({
 
 ### 9.2. Quản lý Mẫu thông báo (Templates - Admin Only)
 *   **Method & Route:** `GET /api/v1/notification/templates`
-*   **Permission:** `RequirePermissions('notification.templates.manage')`
+*   **Permission:** `RequirePermissions('notification.template.manage')`
 *   **Quy chuẩn truy vấn:** Áp dụng `TypeOrmQueryHelper` xử lý phân trang, lọc và tìm kiếm.
 *   *Search fields:* `template.eventType`, `template.subject`.
 *   *Filter fields:* `channel`, `language`, `isActive`.
@@ -436,7 +463,7 @@ BullModule.registerQueue({
 ### 9.3. Cấu hình Tùy chọn Nhận thông báo (Preferences - Owner or Admin)
 *   **Lấy tùy chọn:** `GET /api/v1/notification/preferences/:userId`
 *   **Cập nhật tùy chọn:** `POST /api/v1/notification/preferences/:userId`
-*   *Phân quyền ABAC:* Yêu cầu quyền `notification.preferences.update`. Áp dụng kiểm tra `user.id == resource.userId` (Chuyên viên chỉ được xem/sửa tùy chọn của chính mình).
+*   *Phân quyền ABAC:* Yêu cầu quyền `notification.preference.write`. Áp dụng kiểm tra `user.id == resource.userId` (Chuyên viên chỉ được xem/sửa tùy chọn của chính mình).
 
 ---
 

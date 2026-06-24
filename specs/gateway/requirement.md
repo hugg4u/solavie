@@ -42,4 +42,29 @@ Module Gateway đóng vai trò làm API Gateway và Omnichannel Webhook Receiver
 - **Phòng chống Prompt Injection:** Áp dụng kiểm duyệt dữ liệu đầu vào nghiêm ngặt (Strict Input Validation) thông qua DTOs và Zod Schemas. Ngăn chặn lưu trữ các biến chứa từ khóa bẻ khóa prompt độc hại như `Ignore previous instructions`, `System developer mode`, `Reset system rules`...
 - **Redis Caching:** Kết quả truy vấn biến prompt phải được cache vào Redis (`REDIS_CACHE_URL`) với TTL **300 giây (5 phút)** để tránh nghẽn database khi LLM Generator gọi liên tục cho từng tin nhắn chat. Cần invalidate cache Redis tức thì ngay khi Admin thực hiện cập nhật biến qua Portal.
 
+### 2.10. Zalo Token Sync Worker & Auto-Refresh
+- Tự động duy trì hiệu lực của Zalo Access Token. Chạy worker ngầm định kỳ quét và làm mới (Refresh Token) mỗi **20 giờ** (trước khi token hết hạn 25 giờ).
+- Ghi nhận trạng thái token vào CSDL và tự động cache vào Redis để các API gửi tin sử dụng.
+
+### 2.11. Webhook Payload Parsers (Carousels & Lists)
+- Hỗ trợ phân tích (parse) các payload tin nhắn đặc thù:
+  - Facebook Carousel (nhóm thẻ trượt chứa hình ảnh, tiêu đề, nút bấm).
+  - Zalo List (danh sách tin nhắn dạng bảng/dòng).
+- Gateway trích xuất các hành động click của khách từ các button này (chứa payload `ref_parameter` hoặc custom data) để chuyển đổi sang UnifiedMessage dạng tương tác nút bấm.
+
+### 2.12. Tự động hóa bình luận (Comment Automation)
+- Lắng nghe sự kiện bình luận (Comment Webhook) từ Facebook Post.
+- **Ẩn bình luận nhạy cảm (PII Filter):** Tự động phát hiện và ẩn các bình luận chứa số điện thoại (quét Regex) để bảo vệ thông tin khách hàng và tránh bị đối thủ cướp khách.
+- **Auto-Reply & Comment-to-Inbox:** Tự động bình luận công khai phản hồi khách hàng theo cấu hình mẫu, đồng thời mở cuộc hội thoại chat riêng (Private Message) gửi tin nhắn trực tiếp vào hộp thư Messenger của khách hàng.
+
+### 2.13. Growth Tools Webhook Integration
+- Webhook Receiver phải trích xuất được các tham số tiếp thị dạng `ref` hoặc `qr_parameter` từ sự kiện bắt đầu (Opt-in / Referral Webhook) khi khách hàng truy cập qua link tiếp thị hoặc quét mã QR. Chuyển thông tin này sang Chatbot Module để kích hoạt Flow tương ứng.
+
+### 2.14. Chính sách cửa sổ 24 giờ & Message Tags
+- Thực thi nghiêm ngặt chính sách cửa sổ 24 giờ của Facebook/Zalo.
+- Khi gửi tin nhắn chủ động (Broadcasting, Sequences) ngoài cửa sổ 24h, Gateway phải tự động đính kèm Message Tags phù hợp:
+  - `CONFIRMED_EVENT_UPDATE`: Gửi thông tin cập nhật lịch hẹn.
+  - `HUMAN_AGENT`: Gửi tin nhắn trả lời thủ công của chuyên viên (được cấu hình tag cho Facebook).
+- Nếu không có tag hợp lệ, chặn đứng cuộc gọi API gửi tin và báo lỗi `OUTSIDE_24H_WINDOW` để bảo vệ Fanpage/OA không bị khóa.
+
 

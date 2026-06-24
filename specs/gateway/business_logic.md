@@ -478,6 +478,270 @@ export class PromptVariablesService {
   }
 }
 ```
+
+---
+
+## 9. Đặc Tả Zalo Token Sync Worker (ZaloTokenSyncWorker)
+
+Worker chạy ngầm định kỳ để tự động làm mới (refresh) Zalo Access Token trước khi hết hạn 25 giờ (chu kỳ chạy: mỗi 20 giờ).
+
+```typescript
+@Injectable()
+export class ZaloTokenSyncWorker {
+  private readonly logger = new Logger(ZaloTokenSyncWorker.name);
+
+  constructor(
+    @InjectRepository(ChannelConfiguration)
+    private readonly channelRepo: Repository<ChannelConfiguration>,
+    private readonly cryptoService: GatewayCryptoService,
+    private readonly httpService: HttpService,
+    @InjectRedis('cache') private readonly redis: Redis,
+  ) {}
+
+  @Cron('0 */20 * * *') // Chạy mỗi 20 giờ
+  async refreshZaloToken(): Promise<void> {
+    this.logger.log('Bắt đầu đồng bộ làm mới Zalo Access Token...');
+
+    // 1. Lấy cấu hình Zalo OA
+    const config = await this.channelRepo.findOneBy({ channel_type: 'ZALO' });
+    if (!config) {
+      this.logger.warn('Không tìm thấy cấu hình kênh Zalo OA trong hệ thống.');
+      return;
+    }
+
+    // 2. Giải mã credentials
+    const decryptedJson = this.cryptoService.decrypt(config.credentials, config.encryption_iv, config.encryption_tag);
+    const credentials = JSON.parse(decryptedJson); // Chứa appId, appSecret, accessToken, refreshToken
+
+    try {
+      // 3. Gọi API Zalo để đổi refresh token lấy access token mới
+      const response = await firstValueFrom(
+        this.httpService.post('https://oauth.zalo.me/v2.0/oa/access_token', 
+          new URLSearchParams({
+            refresh_token: credentials.refreshToken,
+            app_id: credentials.appId,
+            grant_type: 'refresh_token'
+          }),
+          { headers: { 'Content-Type': 'application/x-www-form-urlencoded', secret_key: credentials.appSecret } }
+        )
+      );
+
+      const data = response.data;
+      if (!data.access_token) {
+        throw new Error(`Zalo API error: ${JSON.stringify(data)}`);
+      }
+
+      // 4. Mã hóa credentials mới
+      const newCredentials = {
+        ...credentials,
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || credentials.refreshToken
+      };
+
+      const encrypted = this.cryptoService.encrypt(JSON.stringify(newCredentials));
+      
+      // 5. Cập nhật Database
+      config.credentials = encrypted.encryptedData;
+      config.encryption_iv = encrypted.iv;
+      config.encryption_tag = encrypted.tag;
+      config.updated_at = new Date();
+      await this.channelRepo.save(config);
+
+      // 6. Xóa cache Redis để cập nhật token mới
+      await this.redis.del('gateway:zalo:access_token');
+      await this.redis.set('gateway:zalo:access_token', data.access_token, 'EX', 7200); // Cache 2 tiếng
+
+      this.logger.log('Đã làm mới Zalo Access Token thành công.');
+
+    } catch (error) {
+      this.logger.error('Lỗi khi thực hiện refresh Zalo Access Token', error.stack);
+      // Bắn event outbox gửi cảnh báo cho IT Admin
+      this.eventEmitter.emit('gateway.token.refresh_failed', {
+        channel: 'ZALO',
+        error: error.message
+      });
+    }
+  }
+}
 ```
 
+---
+
+## 10. Đặc Tả Tự Động Hóa Bình Luận Facebook (CommentAutomationService)
+
+Lắng nghe webhook sự kiện comment trên Fanpage, tự động ẩn bình luận chứa SĐT và nhắn tin riêng (Private Reply) tiếp cận khách hàng.
+
+```typescript
+@Injectable()
+export class CommentAutomationService {
+  private readonly phoneRegex = /(0[3|5|7|8|9])+([0-9]{8})\b/g;
+
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly cryptoService: GatewayCryptoService,
+    @InjectRepository(ChannelConfiguration)
+    private readonly channelRepo: Repository<ChannelConfiguration>,
+  ) {}
+
+  /**
+   * Xử lý webhook comment đầu vào
+   */
+  async handleIncomingComment(payload: any): Promise<void> {
+    const { comment_id, message, post_id, sender_id } = payload;
+    if (!message || sender_id === payload.page_id) return; // Bỏ qua comment của chính trang
+
+    const hasPhone = this.phoneRegex.test(message);
+
+    // 1. Lấy token Facebook Page
+    const pageToken = await this.getFacebookPageToken();
+
+    // 2. Nếu bình luận chứa SĐT -> Tiến hành Ẩn bình luận để tránh cướp khách
+    if (hasPhone) {
+      await this.hideFacebookComment(comment_id, pageToken);
+      
+      // Gửi phản hồi công khai (Auto Reply)
+      const autoReplyText = 'Dạ Solavie đã nhận được thông tin và gửi chi tiết tư vấn vào hộp thư của bạn rồi ạ. Bạn check tin nhắn giúp shop nhé!';
+      await this.replyPublicComment(comment_id, autoReplyText, pageToken);
+
+      // Gửi tin nhắn riêng (Private Message / Comment-to-Inbox)
+      const privateText = 'Chào anh/chị, em thấy mình để lại số điện thoại quan tâm lắp đặt Điện mặt trời Solavie. Chuyên viên kỹ thuật bên em sẽ liên hệ tư vấn ngay ạ.';
+      await this.sendPrivateReply(comment_id, privateText, pageToken);
+    }
+  }
+
+  private async hideFacebookComment(commentId: string, pageToken: string): Promise<void> {
+    await firstValueFrom(
+      this.httpService.post(`https://graph.facebook.com/v19.0/${commentId}`, 
+        { is_hidden: true },
+        { headers: { Authorization: `Bearer ${pageToken}` } }
+      )
+    );
+  }
+
+  private async replyPublicComment(commentId: string, text: string, pageToken: string): Promise<void> {
+    await firstValueFrom(
+      this.httpService.post(`https://graph.facebook.com/v19.0/${commentId}/comments`, 
+        { message: text },
+        { headers: { Authorization: `Bearer ${pageToken}` } }
+      )
+    );
+  }
+
+  private async sendPrivateReply(commentId: string, text: string, pageToken: string): Promise<void> {
+    await firstValueFrom(
+      this.httpService.post(`https://graph.facebook.com/v19.0/me/messages`, 
+        {
+          recipient: { comment_id: commentId },
+          message: { text: text }
+        },
+        { headers: { Authorization: `Bearer ${pageToken}` } }
+      )
+    );
+  }
+}
+```
+
+---
+
+## 11. Phân Tích Webhook Rich Media & Tham Số Growth Tools
+
+```typescript
+@Injectable()
+export class WebhookPayloadParser {
+  /**
+   * Chuẩn hóa Webhook Facebook Carousel / Zalo List / Ref Parameter
+   */
+  parseEvent(payload: any): UnifiedMessage {
+    // 1. Phân tích Referral Growth Tools
+    let refParameter = null;
+    if (payload.entry?.[0]?.messaging?.[0]?.referral?.ref) {
+      refParameter = payload.entry[0].messaging[0].referral.ref; // Facebook Link Ref
+    } else if (payload.event_name === 'user_received_message' && payload.message?.tracking_info) {
+      refParameter = payload.message.tracking_info; // Zalo QR parameters
+    }
+
+    // 2. Phân tích Button clicks từ Carousel/Thẻ trượt
+    let content = payload.message?.text || '';
+    if (payload.entry?.[0]?.messaging?.[0]?.postback?.payload) {
+      // Phân tích click nút từ Carousel Facebook
+      content = payload.entry[0].messaging[0].postback.payload;
+    }
+
+    return {
+      messageId: payload.message?.mid || payload.message?.msg_id || uuidv4(),
+      channel: payload.channel, // FACEBOOK hoặc ZALO
+      senderId: payload.sender?.id || payload.sender_id,
+      recipientId: payload.recipient?.id || payload.recipient_id,
+      type: refParameter ? 'GROWTH_TOOL_OPTIN' : 'TEXT',
+      content: content,
+      timestamp: payload.timestamp || Date.now(),
+      refParameter: refParameter
+    };
+  }
+}
+```
+
+---
+
+## 12. Kiểm Tra Chính Sách Cửa Sổ 24 Giờ & Gắn Message Tags
+
+```typescript
+@Injectable()
+export class MessagePolicyGuard {
+  /**
+   * Kiểm tra điều kiện gửi tin nhắn và gắn tag
+   */
+  prepareOutgoingMessage(
+    conversation: ChatConversation,
+    messageText: string,
+    tag?: 'CONFIRMED_EVENT_UPDATE' | 'HUMAN_AGENT'
+  ): { allowed: boolean; payload: any; error?: string } {
+    const now = Date.now();
+    const lastCustomerMessageTime = conversation.last_customer_message_at 
+      ? new Date(conversation.last_customer_message_at).getTime()
+      : 0;
+    
+    const isWithin24Hours = (now - lastCustomerMessageTime) <= 24 * 60 * 60 * 1000;
+
+    if (conversation.channel === 'FACEBOOK') {
+      if (isWithin24Hours) {
+        return {
+          allowed: true,
+          payload: { recipient: { id: conversation.sender_id }, message: { text: messageText } }
+        };
+      } else {
+        // Ngoài 24h: Yêu cầu bắt buộc đính kèm Message Tag hợp lệ
+        if (!tag) {
+          return { allowed: false, payload: null, error: 'OUTSIDE_24H_WINDOW: Cần truyền Message Tag để gửi tin ngoài 24h.' };
+        }
+        return {
+          allowed: true,
+          payload: {
+            recipient: { id: conversation.sender_id },
+            messaging_type: 'MESSAGE_TAG',
+            tag: tag,
+            message: { text: messageText }
+          }
+        };
+      }
+    } else if (conversation.channel === 'ZALO') {
+      if (isWithin24Hours) {
+        return {
+          allowed: true,
+          payload: { recipient: { user_id: conversation.sender_id }, message: { text: messageText } }
+        };
+      } else {
+        // Ngoài 24h đối với Zalo OA: Chặn gửi tin nhắn text tự do
+        return {
+          allowed: false,
+          payload: null,
+          error: 'OUTSIDE_24H_WINDOW: Zalo OA cấm gửi tin nhắn tự do ngoài 24h. Bắt buộc chuyển hướng gửi Zalo ZNS.'
+        };
+      }
+    }
+
+    return { allowed: false, payload: null, error: 'UNSUPPORTED_CHANNEL' };
+  }
+}
+```
 

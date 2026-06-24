@@ -23,7 +23,7 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
   - Nếu `isTyping = false`: Xóa key trong Redis `cache` (nếu đúng Agent đang giữ lock) và phát event `server:typing_status` với `isTyping = false`.
 
 ## Phase 3: REST APIs Implementation
-- [ ] **Define Permission Constants:** Tạo file `inbox.permissions.ts` định nghĩa các hằng số quyền như `chat:read`, `chat:write` và đăng ký tự động vào global registry lúc khởi chạy.
+- [ ] **Define Permission Constants:** Tạo file `inbox.permissions.ts` định nghĩa các hằng số quyền như `inbox.conversation.read`, `inbox.conversation.write` và đăng ký tự động vào global registry lúc khởi chạy.
 - [ ] **Implement ConversationHydrator:** Xây dựng `ConversationHydrator` triển khai interface `ResourceHydrator` từ Core Database, chỉ select các trường tối thiểu (`id`, `state`, `assignee_id`, `channel`) và đăng ký với `ResourceHydratorRegistry` dưới tiền tố `inbox.conversation`.
 - [ ] **Inbox Feed API with QueryHelper:** Triển khai endpoint `GET /api/v1/inbox/conversations` kèm `JwtAuthGuard` và `PermissionsGuard`. Tích hợp `TypeOrmQueryHelper` để xử lý phân trang, lọc (`state`, `assignee_id`, `channel`), sắp xếp (`last_message_at`, `created_at`), và tìm kiếm (`customer_name`, `last_message_content`).
 - [ ] **Timeline Sync API:** Triển khai endpoint `GET /api/v1/inbox/conversations/:id/timeline` thu thập cả tin nhắn hội thoại (`chat_messages`) và bình luận nội bộ (`inbox_internal_comments`), gộp và sắp xếp theo thời gian để hiển thị trên dòng thời gian Portal.
@@ -55,3 +55,10 @@ Kế hoạch lập trình và triển khai module Agent Inbox được phân chi
 - [ ] **WebSocket Gateway Tests:** Viết integration tests cho `InboxGateway` để kiểm tra cơ chế ghi nhớ lock gõ phím trên Redis, tự động hết hạn lock sau 5 giây và đồng bộ sự kiện typing.
 - [ ] **Internal Comment Tagging Tests:** Viết unit tests kiểm chứng khả năng trích xuất tên chính xác bằng Regex từ ghi chú nội bộ và kiểm tra sự kiện `inbox.agent_mentioned` được ghi đúng vào Outbox. [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - [ ] **Handover Event Tests:** Viết unit test kiểm tra khi Auto-Routing gán Sales, event `inbox.new_message` được emit cho đúng `assigneeId`.
+
+## Phase 6: Omnichannel 24h Window & Composer Lock
+- [ ] **24-Hour Timer Utility on Frontend:** Xây dựng hook đếm ngược thời gian từ `last_customer_message_at` để hiển thị nhãn cảnh báo thời gian thực (Xanh/Đỏ) trên UI.
+- [ ] **Composer Lock Logic on Frontend:** Lắng nghe giá trị đếm ngược; vô hiệu hóa trường soạn thảo tự do (input text area) và nút gửi khi ngoài 24 giờ.
+- [ ] **Tag Selection Dropdown UI:** Khi composer bị khóa, hiển thị dropdown danh sách các mẫu tin nhắn được duyệt trước cùng các tag phù hợp (`CONFIRMED_EVENT_UPDATE` hoặc `HUMAN_AGENT`).
+- [ ] **Backend 24-Hour Policy Validation:** Trong API `POST /api/v1/inbox/conversations/:id/messages`, bổ sung logic ném exception `OUTSIDE_24H_WINDOW` nếu gửi tin nhắn thường ngoài 24h, và chỉ cho phép nếu tin nhắn có kèm tag hợp lệ (đối với Facebook) hoặc ném lỗi cấm hoàn toàn tin nhắn tự do (đối với Zalo).
+- [ ] **Integration Testing for 24h Policy:** Viết unit test giả lập tình huống `last_customer_message_at` cách đây 25h, gửi tin nhắn text thường và kiểm tra xem có ném đúng lỗi `OUTSIDE_24H_WINDOW` hay không.

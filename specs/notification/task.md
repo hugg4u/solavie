@@ -40,13 +40,13 @@
 - [ ] **C3.1**: Định nghĩa `INotificationProvider` interface
 - [ ] **C3.2**: Implement `InAppProvider` (Socket.io direct emit — Tier 1 Critical)
 - [ ] **C3.3**: Implement `EmailProvider` (Nodemailer + AWS SES transport)
-- [ ] **C3.4**: Implement `ZaloProvider` (Zalo ZNS API client + Fallback logic)
+- [ ] **C3.4**: Implement `ZaloProvider` (Zalo ZNS API client + phone number normalization to 84xxxxxxxxx format)
 - [ ] **C3.5**: Tạo `ProviderRegistry` (factory để inject đúng provider theo channel)
 
 ### C.4 — BullMQ Queues & Workers
 - [ ] **C4.1**: Định nghĩa 3 BullMQ queues: `email-notification-queue`, `zalo-notification-queue`, `scheduled-notification-queue`
 - [ ] **C4.2**: Implement `EmailWorker` (BullMQ Processor + error handling + log update)
-- [ ] **C4.3**: Implement `ZaloWorker` (BullMQ Processor + ZNS API call + fallback email)
+- [ ] **C4.3**: Implement `ZaloWorker` (BullMQ Processor + ZNS API call + catch any ZNS API / connection error and trigger automatic fallback to Email via AWS SES)
 - [ ] **C4.4**: Implement `ScheduledWorker` (Delayed job processor — reminder 24h + 1h)
 - [ ] **C4.5**: Implement DLQ handling (after maxAttempts exceeded)
 
@@ -73,5 +73,5 @@ Thay vì sử dụng `EventEmitter` nội bộ cục bộ, Notification Module s
 - [ ] **D7**: Integration test: `chat.handover_requested` → In-App WebSocket delivery < 500ms
 - [ ] **D8**: Test Idempotency: cùng event gửi 2 lần → chỉ 1 notification delivered [Tham khảo Inbox Pattern Spec](../system_inbox_pattern.md)
 - [ ] **D9**: Test DLQ: EmailProvider throw exception 3 lần → job vào DLQ + log FAILED
-- [ ] **D10**: Test Zalo Fallback: `zalo_user_id = null` → tự động chuyển gửi Email
+- [ ] **D10**: Test Zalo Fallback: Gửi tin nhắn ZNS thất bại do số điện thoại không dùng Zalo hoặc lỗi API ZNS → tự động chuyển đổi sang định dạng Email và gửi qua AWS SES thành công.
 - [ ] **D11**: Test Quiet Hours: Email bị chặn trong giờ cấm → In-App vẫn hoạt động

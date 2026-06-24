@@ -10,16 +10,16 @@ recipient_type = 'staff'
   → ZALO: KHÔNG áp dụng cho Staff
 ```
 
-### Quy tắc 2: Customer (Khách hàng) chỉ nhận Email + Zalo ZNS
+### Quy tắc 2: Customer (Khách hàng) nhận Zalo ZNS (Ưu tiên) và Fallback Email
 ```
 recipient_type = 'customer'
   → NEVER: in_app (khách hàng không có tài khoản Sales Portal)
-  → EMAIL: nếu customer.email không null
-  → ZALO: nếu customer.zalo_user_id không null
-  → Nếu cả 2 đều available → Fan-out gửi cả Email + Zalo ZNS
-  → Nếu chỉ có email → Email only
-  → Nếu chỉ có zalo_user_id → Zalo only
-  → Nếu không có gì → Skip, log warning
+  → ZALO (ZNS): Ưu tiên gửi qua số điện thoại `customerPhone` (nếu không null và hợp lệ).
+  → FALLBACK EMAIL (AWS SES): 
+    - Nếu gửi ZNS qua Zalo thất bại (số điện thoại không dùng Zalo, hết hạn OA token, lỗi kết nối Zalo...).
+    - Hoặc nếu không có số điện thoại `customerPhone` nhưng có `customerEmail`.
+    - Fallback sẽ gửi qua AWS SES tới `customerEmail`.
+  → Nếu không có cả số điện thoại và email → Skip, ghi log cảnh báo.
 ```
 
 ### Quy tắc 3: Quiet Hours (chỉ áp dụng cho Email của Staff)
@@ -353,7 +353,7 @@ async render(eventType: string, channel: 'email' | 'zalo' | 'in_app', context: R
 | Provider throw exception | BullMQ retry với exponential backoff (5s, 10s, 20s) |
 | Hết 3 lần retry | Job chuyển vào Dead-Letter Queue, log status='FAILED' |
 | Template không tìm thấy | Log ERROR + status='FAILED', không retry |
-| Zalo ZNS lỗi NO_ZALO_USER_ID | Fallback sang Email (nếu có), log skip_reason='ZALO_FALLBACK_EMAIL' |
+| Zalo ZNS gặp lỗi bất kỳ (không có Zalo, lỗi OA, API error) | Tự động fallback sang Email qua AWS SES (nếu có email), log status='SENT', channel='email', error_message='ZNS failed... Fallbacked to Email' |
 | Socket.io user offline | Log status='SKIPPED', skip_reason='USER_OFFLINE' |
 | Idempotency duplicate | Log status='SKIPPED', skip_reason='IDEMPOTENT' |
 | Quiet Hours vi phạm | Log status='SKIPPED', skip_reason='QUIET_HOURS' |

@@ -4,7 +4,7 @@
 - `[ ]` **Storage Permissions & Sync Config:**
   - Tạo tệp `storage.permissions.ts` chứa các hằng số quyền của Storage.
   - Đăng ký hằng số này vào `permission-registry.ts` ở Core để kích hoạt Auto-Sync khi chạy hệ thống.
-  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full storage.*, `SALES` chỉ storage.files.upload/read).
+  - Cấu hình mapping quyền mặc định cho các vai trò trong `IamSeedService` (ví dụ: `ADMIN` full storage.*, `SALES` chỉ `storage.file.upload` và `storage.file.read`).
 - `[ ]` **Storage Entities & Outbox:** Cài đặt TypeORM Entity cho bảng `storage_files` và `storage_outbox_events` (hỗ trợ Transactional Outbox). [Tham khảo Outbox Spec](../system_outbox_pattern.md)
 - `[ ]` **Storage Service:** Cài đặt package `@aws-sdk/client-s3` và `@aws-sdk/s3-presigned-post`. Viết wrapper kết nối S3 API.
 - `[ ]` **Bucket Provisioning Script:** Viết script tự động tạo 4 buckets `rag-documents`, `customer-media`, `user-media`, `system-assets` khi hệ thống lần đầu khởi chạy, đồng thời gắn Lifecycle Policy (OLM) tự động xóa thư mục `tmp/` sau 1 ngày.

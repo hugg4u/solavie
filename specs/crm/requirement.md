@@ -60,3 +60,12 @@ Module CRM (Customer Relationship Management) đóng vai trò là "Hệ thần k
 - **`lead.score_hot`**: Phát khi AI Scoring Engine tính toán và Lead đạt ngưỡng nhiệt độ HOT. Payload bao gồm: `leadId`, `leadName`, `leadScore`, `assigneeId`, và `managerId` (nếu có).
 - **`lead.status_changed`**: Phát khi Sales kéo thẻ Lead sang một stage mới trên Kanban Board. Payload bao gồm: `leadId`, `leadName`, `assigneeId`, `oldStageName`, `newStageName`.
 - **`customer.note_mentioned`**: Phát khi một nhân viên gõ `@username` trong ghi chú khách hàng. Payload bao gồm: `customerId`, `mentionedUserId`, `mentionerName`, `noteSnippet`.
+
+### 2.10. Cơ chế Gộp Hồ Sơ Tự Động (MergeProfileService Requirements)
+- Khi Chatbot/Inbox trích xuất được số điện thoại từ hội thoại của khách, hệ thống tự động kiểm tra trùng lặp trong DB.
+- Nếu SĐT đã tồn tại trên một Customer/Lead khác, kích hoạt quy trình gộp hồ sơ tự động:
+  - **Duy trì bản ghi chính (Master Profile):** Bản ghi được tạo đầu tiên hoặc bản ghi đã được xác thực (AI Qualified / Sales Rep assigned) được chọn làm Master Profile. Bản ghi phụ (Zalo/Facebook profiles rác mới tạo) sẽ bị gộp vào Master Profile và soft-deleted.
+  - **Gộp thông tin cá nhân:** Hợp nhất Họ tên (ưu tiên chuỗi dài hơn, viết hoa chuẩn), Email, Địa phương.
+  - **Gộp thuộc tính nhu cầu Solar (Custom Fields):** Nếu xảy ra xung đột dữ liệu (ví dụ: Master Profile ghi hóa đơn 2 triệu, Profile phụ ghi hóa đơn 3 triệu), ưu tiên lấy dữ liệu mới nhất, đồng thời lưu vết giá trị cũ bị ghi đè vào một ghi chú viết tay (`crm_customer_notes`) gắn thẻ "SYSTEM_MERGE_OVERWRITE" để Sales Rep có thể tham chiếu lại.
+  - **Hợp nhất Lịch sử Chat & Hoạt động (Timeline Merge):** Chuyển toàn bộ hội thoại (`chat_conversations`) và nhật ký hoạt động (`crm_activities`) của Profile phụ sang Master Profile bằng cách cập nhật `customer_id` tương ứng.
+  - **Bảo vệ bằng khóa phân tán (Distributed Lock):** Bắt buộc chạy qua Redis Lock `lock:merge:phone:${phone}` để tránh đụng độ luồng dữ liệu khi webhook FB và Zalo OA gửi sự kiện cùng lúc.
